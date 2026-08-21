@@ -1,8 +1,14 @@
 /* 연우 말 카드 — 서비스 워커
-   앱 껍데기를 캐시해서 비행기 모드에서도 열리게 합니다.
+   앱 껍데기를 저장해 두어서 비행기 모드에서도 열리게 합니다.
+
+   전략:
+     · 앱 코드(html/js/manifest) → 네트워크 먼저, 안 되면 저장된 사본.
+       고친 파일이 바로 반영됩니다. 예전처럼 옛 파일을 붙들고 있지 않습니다.
+     · 아이콘 → 저장된 사본 먼저 (바뀔 일이 없으니 빠른 쪽으로).
+
    앱을 고친 뒤에는 아래 CACHE 뒤의 숫자를 하나 올리세요. */
 
-const CACHE = "yeonwoo-cards-v4";
+const CACHE = "yeonwoo-cards-v5";
 
 const SHELL = [
   "./",
@@ -20,7 +26,8 @@ const SHELL = [
 self.addEventListener("install", e => {
   e.waitUntil(
     caches.open(CACHE)
-      .then(c => Promise.allSettled(SHELL.map(u => c.add(u))))
+      // cache:"reload" — 설치할 때만은 브라우저 캐시를 건너뛰고 원본을 받아 옵니다
+      .then(c => Promise.allSettled(SHELL.map(u => c.add(new Request(u, { cache: "reload" })))))
       .then(() => self.skipWaiting())
   );
 });
@@ -33,6 +40,14 @@ self.addEventListener("activate", e => {
   );
 });
 
+function putIfOk(req, res){
+  if(res && res.status === 200 && res.type === "basic"){
+    const copy = res.clone();
+    caches.open(CACHE).then(c => c.put(req, copy));
+  }
+  return res;
+}
+
 self.addEventListener("fetch", e => {
   const req = e.request;
   if(req.method !== "GET") return;
@@ -41,13 +56,23 @@ self.addEventListener("fetch", e => {
   // 같은 주소의 파일만 다룹니다. 구글 폰트나 Firebase 요청은 건드리지 않습니다.
   if(url.origin !== self.location.origin) return;
 
-  // 화면 이동은 네트워크 먼저, 안 되면 캐시된 index.html
+  // 아이콘: 저장된 사본 먼저
+  if(url.pathname.includes("/icons/")){
+    e.respondWith(
+      caches.match(req).then(hit => hit || fetch(req).then(res => putIfOk(req, res)))
+    );
+    return;
+  }
+
+  // 화면 이동: 네트워크 먼저, 안 되면 저장해 둔 index.html
   if(req.mode === "navigate"){
     e.respondWith(
       fetch(req)
         .then(res => {
-          const copy = res.clone();
-          caches.open(CACHE).then(c => c.put("./index.html", copy));
+          if(res && res.status === 200 && res.type === "basic"){
+            const copy = res.clone();
+            caches.open(CACHE).then(c => c.put("./index.html", copy));
+          }
           return res;
         })
         .catch(() => caches.match("./index.html").then(r => r || caches.match("./")))
@@ -55,17 +80,10 @@ self.addEventListener("fetch", e => {
     return;
   }
 
-  // 나머지 파일은 캐시 먼저, 뒤에서 조용히 새로 받아 둡니다
+  // 앱 코드: 네트워크 먼저, 안 되면 저장된 사본
   e.respondWith(
-    caches.match(req).then(hit => {
-      const net = fetch(req).then(res => {
-        if(res && res.status === 200 && res.type === "basic"){
-          const copy = res.clone();
-          caches.open(CACHE).then(c => c.put(req, copy));
-        }
-        return res;
-      }).catch(() => hit);
-      return hit || net;
-    })
+    fetch(req)
+      .then(res => putIfOk(req, res))
+      .catch(() => caches.match(req).then(hit => hit || caches.match("./index.html")))
   );
 });

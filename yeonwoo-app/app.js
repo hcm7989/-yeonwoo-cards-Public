@@ -760,8 +760,8 @@ if(m && m[1] && m[1] !== family){
 
 if(firstRun){ tab = "add"; SS.set("ycard.tab", "add"); }
 
+/* 서비스 워커 등록. window.load 를 기다리지 않습니다 —
+   구글 폰트 같은 외부 자원이 느리면 load 가 늦게 떠서 등록도 같이 밀립니다. */
 if("serviceWorker" in navigator){
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
-  });
+  navigator.serviceWorker.register("sw.js").catch(() => {});
 }
