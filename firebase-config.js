@@ -22,7 +22,14 @@
 //    실제 접근 제어는 Firebase 쪽 보안 규칙이 합니다 (README 5단계).
 // ────────────────────────────────────────────────────────────────
 
-export const FIREBASE_CONFIG = {};
+export const FIREBASE_CONFIG = {export const FIREBASE_CONFIG = {
+  apiKey: "AIzaSy...",
+  authDomain: "yeonwoo-cards.firebaseapp.com",
+  projectId: "yeonwoo-cards",
+  storageBucket: "yeonwoo-cards.firebasestorage.app",
+  messagingSenderId: "123456789012",
+  appId: "1:123456789012:web:abc123"
+};};
 
 // Firebase JS SDK 버전. 특별한 이유가 없으면 그대로 두세요.
 export const FIREBASE_VERSION = "12.18.0";
