@@ -6,11 +6,14 @@
 
 export const SITUATIONS = [
   "현관","주방","식탁","거실","화장실","침실","옷·놀이방","차 안",
-  "놀이","달래기","칭찬","훈육","기타"
+  "달래기","칭찬","훈육","기타"
 ];
 
+// 예전 버전에 들어 있다가 빠진 기본 카드. 다음 실행 때 자동으로 걷어냅니다.
+export const SEED_RETIRED = ["s49","s50","s51","s52","s53","s54","s55","s56"];
+
 // 기본 카드를 늘리거나 고칠 때마다 이 숫자를 올리세요.
-export const SEED_VERSION = 2;
+export const SEED_VERSION = 3;
 
 export const SEED_ROWS = [
 
@@ -172,33 +175,7 @@ export const SEED_ROWS = [
    "We're here! Grab your bag.","다 왔다! 가방 챙겨."],
   ["차 안","Stay in your seat.","자리에 앉아 있어.",
    "stay 는 '그 상태를 유지하라'는 뜻이라 일어서려는 아이를 붙잡는 자리에 딱 맞습니다. stay close(붙어 있어), stay here(여기 있어)도 같은 틀입니다.",
-   "Stay in your seat until the car stops.","차 설 때까지 자리에 앉아 있어."],
-
-  /* ── 그때그때 쓰는 말 ───────────────────────────────── */
-  ["달래기","Aww, sweetie.","아이고, 우리 연우.",
-   "'아이고'는 안쓰러움·놀람·체념이 한꺼번에 담긴 소리라 영어 단어 하나로 옮겨지지 않습니다. 다쳤을 땐 Aww / Oh no, 실수했을 땐 Whoops, 힘들어 보일 땐 Poor thing 으로 갈라 씁니다. '우리 연우'의 '우리'를 our 로 옮기면 어색하니, 이름만 부르거나 sweetie·honey 를 붙입니다.",
-   "Aww, sweetie, did you bump your knee?","아이고 우리 연우, 무릎 부딪혔어?","넘어지거나 속상해할 때"],
-  ["칭찬","That was so grown-up of you.","기특하네.",
-   "'기특하다'에 딱 맞는 영어 단어는 없습니다. 영어는 grown-up(어른스럽다), proud(자랑스럽다), kind(착하다)로 나눠서 말합니다. 아이 칭찬은 사람보다 행동을 짚어 주는 쪽이 원어민 습관에 가깝습니다 — 'You're so good' 보다 'That was so kind of you.'",
-   "You put your shoes away all by yourself — that was so grown-up of you.","신발 혼자 정리했네, 정말 기특하다.","혼자 뭔가 해냈을 때"],
-  ["칭찬","Look how big you're getting!","다 컸네.",
-   "'You're all grown up' 은 다 자란 어른에게 쓰는 말이라 세 살에게는 과장되게 들립니다. 아이에게는 진행형 getting 을 써서 '커 가는 중'을 짚어 주는 게 자연스럽습니다.",
-   "You zipped your own jacket — look how big you're getting!","점퍼 혼자 잠갔네, 우리 연우 다 컸다!","혼자 옷 입었을 때"],
-  ["훈육","I know you're upset — but no screaming.","떼쓰지 마.",
-   "떼쓰기는 정도에 따라 단어가 갈립니다. 칭얼거리는 정도는 fuss 또는 whine, 바닥에 드러누울 만큼 폭발하면 throw a tantrum. 영어권 육아에서는 감정을 먼저 인정하고 행동만 제한하는 문장 구조를 많이 씁니다.",
-   "I know you're upset that we have to leave. No screaming, though — use your words.","가야 해서 속상한 거 알아. 그래도 소리 지르는 건 안 돼, 말로 하자.","바닥에 드러누울 때"],
-  ["놀이","Want a piggyback ride?","어부바 할까?",
-   "carry you 는 안는 것까지 포함해서 '등에 업다'만 가리키진 않습니다. 등에 업는 건 piggyback, 앞으로 안는 건 carry you 또는 hold you, 목말은 on my shoulders 입니다.",
-   "You look tired — want a piggyback ride to the car?","피곤해 보이네, 차까지 어부바 할까?","안아달라고 할 때"],
-  ["식탁","I'm all done — thank you for the food!","잘 먹었습니다.",
-   "영어권에는 식사 후 인사 관습 자체가 없어 대응하는 고정 표현이 없습니다. 아이에게 가르칠 땐 'I'm all done, thank you!' 가 자연스럽고, 남의 집에서라면 'That was delicious, thank you.' 가 예의에 맞습니다.",
-   "I'm all done — thank you for the food, Mommy!","다 먹었어요, 엄마 잘 먹었습니다!","식사 끝나고"],
-  ["침실","Time for night-night.","코 자자.",
-   "영어에도 유아어가 있어서 이건 거의 그대로 옮겨집니다. 밤잠은 night-night 또는 beddy-bye, 낮잠은 nap time. 다만 세 살쯤부터는 그냥 bedtime 으로 넘어가는 집이 많습니다.",
-   "Books are finished — time for night-night.","책 다 읽었으니까 이제 코 자자.","잘 시간"],
-  ["주방","Gently… gently.","조심조심~",
-   "한국어는 말을 겹쳐서 다정함을 만드는데, 영어는 겹치는 대신 gently·slowly 같은 부사와 낮은 목소리 톤으로 그 느낌을 냅니다. 'Easy does it.' 도 같은 자리에서 쓰는 관용구입니다.",
-   "Gently, gently — the cup is full.","조심조심~ 컵에 가득 찼어.","물컵 들고 갈 때"]
+   "Stay in your seat until the car stops.","차 설 때까지 자리에 앉아 있어."]
 ];
 
 export const SEED = SEED_ROWS.map((r, i) => ({

@@ -84,24 +84,33 @@
 1. 왼쪽 **설정 → 프로젝트 설정** → 아래로 스크롤 **내 앱**
    바로 가기: `console.firebase.google.com/project/yeonwoo-cards/settings/general`
 2. **웹(`</>`)** 아이콘 클릭 → 앱 닉네임 아무거나 → **앱 등록**
-3. 화면에 나오는 `const firebaseConfig = { ... }` 의 **중괄호 안 내용**을 복사
-4. GitHub 저장소에서 **`firebase-config.js`** 를 열고 연필 아이콘 클릭
-5. `export const FIREBASE_CONFIG = {};` 의 `{}` 안에 붙여넣고 Commit
-
-붙여넣은 모습:
+   (이걸 해야 진짜 값이 생깁니다. 건너뛰면 채워 넣을 값 자체가 없습니다)
+3. GitHub 저장소에서 **`firebase-config.js`** 를 열고 연필 아이콘 클릭
+4. 파일 **전체를 지우고** 아래 틀을 붙여넣기
+5. 콘솔에 나온 값을 **따옴표 안에만** 하나씩 옮겨 적고 Commit
 
 ```js
 export const FIREBASE_CONFIG = {
-  apiKey: "AIzaSy...",
-  authDomain: "yeonwoo-cards.firebaseapp.com",
-  projectId: "yeonwoo-cards",
-  storageBucket: "yeonwoo-cards.firebasestorage.app",
-  messagingSenderId: "123456789012",
-  appId: "1:123456789012:web:abc123"
+  apiKey:            "",
+  authDomain:        "",
+  projectId:         "",
+  storageBucket:     "",
+  messagingSenderId: "",
+  appId:             ""
 };
+
+export const FIREBASE_VERSION = "12.18.0";
 ```
 
-> 여기 있는 `apiKey` 는 비밀번호가 아닙니다. 공개돼도 되는 값이고,
+> ⚠️ **여기서 가장 많이 막힙니다.** 콘솔에 보이는 `const firebaseConfig = { ... };`
+> 블록을 통째로 복사해 붙여넣으면 선언이 두 번 겹쳐서 앱이 아예 안 뜹니다.
+> 붙여넣지 말고 **값만 옮겨 적으세요.**
+> `apiKey` 는 `AIza` 로 시작하는 39자 문자열입니다. 점 세 개(`...`)가 들어간
+> 값을 적으면 안 됩니다 — 그건 설명서의 예시 표기입니다.
+
+> 값을 비워 두어도 앱은 잘 돌아갑니다. 공유만 꺼진 채로 카드는 그대로 쓸 수 있으니
+> 막히면 빈 채로 두고 나중에 채워도 됩니다.
+> 그리고 `apiKey` 는 비밀번호가 아닙니다. 공개돼도 되는 값이고,
 > 실제 접근 제어는 다음 단계의 보안 규칙이 합니다.
 
 ### 3-5. 보안 규칙 넣기

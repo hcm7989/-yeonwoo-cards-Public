@@ -2,7 +2,7 @@
    앱 껍데기를 캐시해서 비행기 모드에서도 열리게 합니다.
    앱을 고친 뒤에는 아래 CACHE 뒤의 숫자를 하나 올리세요. */
 
-const CACHE = "yeonwoo-cards-v3";
+const CACHE = "yeonwoo-cards-v4";
 
 const SHELL = [
   "./",

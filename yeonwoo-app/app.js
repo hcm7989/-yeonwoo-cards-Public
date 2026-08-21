@@ -1,4 +1,4 @@
-import { SEED, SEED_VERSION, SITUATIONS } from "./seed.js";
+import { SEED, SEED_VERSION, SEED_RETIRED, SITUATIONS } from "./seed.js";
 
 /* firebase-config.js 는 사용자가 직접 고치는 유일한 파일이라, 붙여넣다 문법이
    깨질 수 있습니다. 정적 import 로 두면 그때 앱 전체가 안 뜨고 흰 화면이 되므로
@@ -57,12 +57,28 @@ if(!Array.isArray(cards)){
   const removed = new Set(LS.get("ycard.removedSeeds", []));
   SEED.forEach(s => { if(!have.has(s.id) && !removed.has(s.id)) cards.push(s); });
 }
-LS.set("ycard.seedVer", SEED_VERSION);
-LS.set("ycard.cards", cards);
 
 // 오프라인 안전망: 아직 클라우드가 못 받은 변경분
 let outbox = LS.get("ycard.outbox", []);   // [{card, rev}] 업로드 대기
 let tombs  = LS.get("ycard.tombs", []);    // 삭제 대기 중인 id
+
+// 예전 버전에서 깔렸다가 목록에서 빠진 기본 카드를 걷어냅니다.
+// 직접 담은 카드(c로 시작)는 절대 건드리지 않습니다.
+if(LS.get("ycard.seedVer", 1) < SEED_VERSION && SEED_RETIRED && SEED_RETIRED.length){
+  const retire = new Set(SEED_RETIRED);
+  const gone = cards.filter(c => retire.has(c.id)).map(c => c.id);
+  if(gone.length){
+    cards = cards.filter(c => !retire.has(c.id));
+    outbox = outbox.filter(o => !retire.has(o.card.id));
+    if(LS.get("ycard.family", null)){
+      gone.forEach(id => { if(!tombs.includes(id)) tombs.push(id); });
+      LS.set("ycard.tombs", tombs);
+    }
+  }
+}
+
+LS.set("ycard.seedVer", SEED_VERSION);
+LS.set("ycard.cards", cards);
 
 let who        = LS.get("ycard.who", null);
 let family     = LS.get("ycard.family", null);
@@ -119,6 +135,16 @@ function familyCode(){
 const prettyCode = c => c ? c.replace(/(.{4})(?=.)/g, "$1-") : "";
 
 function configured(){ return !!(FIREBASE_CONFIG && FIREBASE_CONFIG.projectId && FIREBASE_CONFIG.apiKey); }
+
+/* README 의 예시 값을 그대로 옮겨 적은 경우를 잡아 줍니다.
+   진짜 웹 API 키는 항상 AIza 로 시작하고 39자입니다. */
+function looksLikeSample(){
+  if(!configured()) return "";
+  const k = String(FIREBASE_CONFIG.apiKey);
+  if(!/^AIza[0-9A-Za-z_-]{20,}$/.test(k)) return "apiKey 가 진짜 값이 아닙니다";
+  if(/^1:123456789012/.test(String(FIREBASE_CONFIG.appId || ""))) return "appId 가 예시 값 그대로입니다";
+  return "";
+}
 
 function saveQueues(){ LS.set("ycard.outbox", outbox); LS.set("ycard.tombs", tombs); }
 
@@ -474,7 +500,11 @@ function settingsView(){
       <b>apiKey: "..."</b> 같은 줄만 들어가야 합니다. 콘솔에서 복사할 때 딸려 오는
       <b>const firebaseConfig =</b> 와 맨 끝 <b>;</b> 는 빼고 넣어 주세요.</p>`;
   }else if(!configured()){
-    h += `<p class="hint">아직 <b>firebase-config.js</b> 가 비어 있어서 공유가 꺼져 있습니다. README 의 순서대로 설정값을 넣으면 이 화면에서 가족 코드를 만들 수 있어요.</p>`;
+    h += `<p class="hint">아직 <b>firebase-config.js</b> 가 비어 있어서 공유가 꺼져 있습니다. 설명서 3단계대로 값을 채우면 이 화면에서 가족 코드를 만들 수 있어요.</p>`;
+  }else if(looksLikeSample()){
+    h += `<p class="hint"><b>${esc(looksLikeSample())}.</b> 설명서에 적힌 예시 값을 그대로 옮겨 적으신 것 같습니다.
+      Firebase 콘솔 → 프로젝트 설정 → 내 앱 → 웹 앱을 등록하면 진짜 값이 나옵니다.
+      진짜 apiKey 는 <b>AIza</b> 로 시작하는 39자 문자열이에요.</p>`;
   }else if(!family){
     h += `<p class="hint">한 사람이 <b>가족 코드 만들기</b>를 누르고, 나온 코드나 링크를 배우자에게 보내세요. 상대는 <b>코드로 참여</b>에 그 코드를 넣으면 됩니다.</p>
       <div class="rowbtns">
