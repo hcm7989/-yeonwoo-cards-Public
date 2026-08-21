@@ -1,8 +1,21 @@
-import { FIREBASE_CONFIG, FIREBASE_VERSION } from "./firebase-config.js";
-import { SEED, SEED_VERSION, SITUATIONS } from "./seed.js";
+import { SEED, SEED_VERSION, SEED_RETIRED, SITUATIONS } from "./seed.js";
+
+/* firebase-config.js 는 사용자가 직접 고치는 유일한 파일이라, 붙여넣다 문법이
+   깨질 수 있습니다. 정적 import 로 두면 그때 앱 전체가 안 뜨고 흰 화면이 되므로
+   따로 떼어 읽고, 실패해도 로컬 전용으로 계속 돌아가게 합니다. */
+let FIREBASE_CONFIG = {};
+let FIREBASE_VERSION = "12.18.0";
+let configError = "";
+try{
+  const mod = await import("./firebase-config.js");
+  FIREBASE_CONFIG  = mod.FIREBASE_CONFIG || {};
+  FIREBASE_VERSION = mod.FIREBASE_VERSION || FIREBASE_VERSION;
+}catch(e){
+  configError = "firebase-config.js 를 읽지 못했습니다";
+}
 
 /* ────────────────────────────────────────────────────────────
-   연우 말 카드 — 담기 / 복습 / 모아보기 / 설정
+   Ellie English — 담기 / 복습 / 모아보기 / 설정
 
    저장은 두 가지 모드로 돌아갑니다.
      local  : 이 기기에만 (firebase-config.js 가 비어 있을 때)
@@ -16,10 +29,20 @@ import { SEED, SEED_VERSION, SITUATIONS } from "./seed.js";
 
 const CHILD = "연우";
 const STEPS = [1,3,7,16,35,90];
-const MIC_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"'
-  + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-  + '<rect x="9" y="2" width="6" height="11" rx="3"></rect>'
-  + '<path d="M5 10v1a7 7 0 0 0 14 0v-1"></path><path d="M12 18v4"></path></svg>';
+const ICON = {
+  mic:   '<rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5 10.5v1a7 7 0 0 0 14 0v-1"/><path d="M12 18.5V22"/>',
+  cards: '<rect x="7" y="3" width="13" height="15" rx="3.2"/><path d="M4 6.6v10.9A3.5 3.5 0 0 0 7.5 21H15"/>',
+  list:  '<path d="M9.5 6.5h10M9.5 12h10M9.5 17.5h10"/><circle cx="5" cy="6.5" r="1.15"/><circle cx="5" cy="12" r="1.15"/><circle cx="5" cy="17.5" r="1.15"/>',
+  gear:  '<path d="M3.5 8h9M17.5 8h3M3.5 16h4M12.5 16h8"/><circle cx="15" cy="8" r="2.4"/><circle cx="10" cy="16" r="2.4"/>',
+  check: '<path d="m4.5 12.5 5 5L20 6.5"/>',
+  arrow: '<path d="M12 4.5v13"/><path d="m6.5 12.5 5.5 5.5 5.5-5.5"/>',
+  bolt:  '<path d="M13 2.5 4.5 13.5H11l-1 8L19.5 10H13z"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 1.8"/>',
+  pen:   '<path d="M16.5 3.5a2.5 2.5 0 0 1 3.5 3.5L8 19l-4.5 1.5L5 16z"/>',
+  play:  '<path d="M8.5 5.5 18 12l-9.5 6.5z"/>'
+};
+const svg = d => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"'
+  + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>';
 
 /* ───────────────── storage ───────────────── */
 const LS = {
@@ -44,12 +67,28 @@ if(!Array.isArray(cards)){
   const removed = new Set(LS.get("ycard.removedSeeds", []));
   SEED.forEach(s => { if(!have.has(s.id) && !removed.has(s.id)) cards.push(s); });
 }
-LS.set("ycard.seedVer", SEED_VERSION);
-LS.set("ycard.cards", cards);
 
 // 오프라인 안전망: 아직 클라우드가 못 받은 변경분
 let outbox = LS.get("ycard.outbox", []);   // [{card, rev}] 업로드 대기
 let tombs  = LS.get("ycard.tombs", []);    // 삭제 대기 중인 id
+
+// 예전 버전에서 깔렸다가 목록에서 빠진 기본 카드를 걷어냅니다.
+// 직접 담은 카드(c로 시작)는 절대 건드리지 않습니다.
+if(LS.get("ycard.seedVer", 1) < SEED_VERSION && SEED_RETIRED && SEED_RETIRED.length){
+  const retire = new Set(SEED_RETIRED);
+  const gone = cards.filter(c => retire.has(c.id)).map(c => c.id);
+  if(gone.length){
+    cards = cards.filter(c => !retire.has(c.id));
+    outbox = outbox.filter(o => !retire.has(o.card.id));
+    if(LS.get("ycard.family", null)){
+      gone.forEach(id => { if(!tombs.includes(id)) tombs.push(id); });
+      LS.set("ycard.tombs", tombs);
+    }
+  }
+}
+
+LS.set("ycard.seedVer", SEED_VERSION);
+LS.set("ycard.cards", cards);
 
 let who        = LS.get("ycard.who", null);
 let family     = LS.get("ycard.family", null);
@@ -57,10 +96,10 @@ let tab        = SS.get("ycard.tab", "add");
 let filter     = SS.get("ycard.filter", "전체");
 let draftKo    = SS.get("ycard.draftKo", "");
 let draftNote  = SS.get("ycard.draftNote", "");
-let draftSit   = null;
 let openId     = null;
 let flipped    = false;
 let reviewIdx  = 0;
+let reviewQueue = [];          // 이번 복습 세션의 카드 순서 (무작위)
 let syncMode   = "local";      // local | connecting | cloud | pending | error
 let syncNote   = "";
 let installEvt = null;
@@ -94,6 +133,30 @@ function grade(id, ok){
   s[id] = r; LS.set(srsKey(), s);
 }
 
+/* 복습은 매번 순서를 섞습니다. 같은 순서로 반복하면 앞 카드의 잔상 때문에
+   실제로 기억나는지 알 수 없습니다. 섞은 순서는 탭을 벗어날 때까지 유지합니다. */
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i = a.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function buildReviewQueue(){
+  reviewQueue = shuffle(dueCards().map(c => c.id));
+  reviewIdx = 0; flipped = false;
+}
+function currentQueue(){
+  const due = new Set(dueCards().map(c => c.id));
+  let q = reviewQueue.filter(id => due.has(id));
+  if(q.length !== due.size){                 // 그 사이 새로 준비된 카드가 있으면 뒤에 붙입니다
+    due.forEach(id => { if(!q.includes(id)) q.push(id); });
+  }
+  reviewQueue = q;
+  return q;
+}
+
 /* ───────────────── cloud sync ───────────────── */
 let fb = null;   // { db, ops }
 
@@ -106,6 +169,16 @@ function familyCode(){
 const prettyCode = c => c ? c.replace(/(.{4})(?=.)/g, "$1-") : "";
 
 function configured(){ return !!(FIREBASE_CONFIG && FIREBASE_CONFIG.projectId && FIREBASE_CONFIG.apiKey); }
+
+/* README 의 예시 값을 그대로 옮겨 적은 경우를 잡아 줍니다.
+   진짜 웹 API 키는 항상 AIza 로 시작하고 39자입니다. */
+function looksLikeSample(){
+  if(!configured()) return "";
+  const k = String(FIREBASE_CONFIG.apiKey);
+  if(!/^AIza[0-9A-Za-z_-]{20,}$/.test(k)) return "apiKey 가 진짜 값이 아닙니다";
+  if(/^1:123456789012/.test(String(FIREBASE_CONFIG.appId || ""))) return "appId 가 예시 값 그대로입니다";
+  return "";
+}
 
 function saveQueues(){ LS.set("ycard.outbox", outbox); LS.set("ycard.tombs", tombs); }
 
@@ -309,43 +382,76 @@ function stopListening(){
 }
 
 /* ───────────────── views ───────────────── */
+
 function header(){
+  const d = dueCards().length;
+  const sub = d ? `${d}장 복습할 차례` : `카드 ${cards.length}장`;
   return `<div class="top">
-    <div class="brand"><h1>${CHILD} 말 카드</h1><span class="sub">말로 담고, 나중에 카드로</span></div>
+    <div class="brand">
+      <img class="mark" src="icons/icon-192.png" alt="" width="34" height="34">
+      <span class="txt"><h1>Ellie English</h1><span class="sub">${esc(sub)}</span></span>
+    </div>
     <div class="who" role="group" aria-label="지금 누구세요">
       <button data-who="아빠" aria-pressed="${who==="아빠"}">아빠</button>
       <button data-who="엄마" aria-pressed="${who==="엄마"}">엄마</button>
-    </div></div>`;
+    </div>
+  </div>`;
+}
+
+/* 오늘 얼마나 남았는지 한 장으로 — 레퍼런스의 그 카드 자리입니다. */
+function promoCard(){
+  const total = readyCards().length;
+  const due   = dueCards().length;
+  const done  = Math.max(0, total - due);
+  const pct   = total ? Math.round((done / total) * 100) : 0;
+  const line  = due
+    ? `오늘 <em>${due}</em>장이 남았어요`
+    : total ? `오늘 몫을 <em>다</em> 끝냈어요` : `카드를 담으면 여기서 시작해요`;
+  return `<button class="promo" data-tab="rev">
+    <span class="cap">${svg(ICON.bolt)}${due ? "복습할 시간" : "오늘 완료"}</span>
+    <span class="big">${line}</span>
+    <span class="track"><i style="width:${total ? Math.max(pct, 3) : 0}%"></i></span>
+    <span class="foot">
+      <span><span class="v">${done}/${total}</span><span class="k">오늘 진도</span></span>
+      <span><span class="v">${cards.length}</span><span class="k">전체 카드</span></span>
+      <span><span class="v">${pendingCards().length}</span><span class="k">영어 대기</span></span>
+    </span>
+  </button>`;
 }
 
 function addView(){
   let h = "";
-  if(!who) h += `<div class="banner"><div>먼저 오른쪽 위에서 <b>아빠 / 엄마</b>를 골라 주세요. 누가 담은 카드인지 표시되고, 복습 진도도 각자 따로 갑니다.</div></div>`;
+  if(configError) h += `<div class="banner warn"><div><b>공유 설정을 읽지 못했습니다.</b>
+    카드는 이 기기에 정상적으로 저장되니 계속 쓰셔도 됩니다. 고치는 방법은 설정 탭에 있습니다.</div></div>`;
+  if(!who) h += `<div class="banner"><div>오른쪽 위에서 <b>아빠 / 엄마</b>를 골라 주세요. 누가 담은 카드인지 표시되고, 복습 진도도 각자 따로 갑니다.</div></div>`;
+
+  h += `<div class="hero"><h2>오늘 하신 말,<br><em>영어로 담아요.</em></h2></div>`;
 
   h += `<div class="sheet">
-    <h2>방금 뭐라고 하셨어요?</h2>
-    <p class="hint">마이크를 누르고 그냥 말하면 글로 받아 적힙니다. 상황 태그는 건너뛰어도 되고, 영어와 뉘앙스 설명은 나중에 채워집니다.</p>`;
+    <h2>방금 ${esc(CHILD)}에게 뭐라고 하셨어요?</h2>
+    <p class="hint">영어로 바로 안 나온 우리말을 그대로 담아 두세요. 영어 표현과 설명은 나중에 채워집니다.</p>`;
 
   if(micState !== "none"){
     h += `<button class="mic" id="btn-mic" data-on="${listening?1:0}">`
-      + (listening ? `<span class="dot"></span><span>듣는 중… 눌러서 멈추기</span>`
-                   : `${MIC_SVG}<span>말로 담기</span>`)
+      + (listening ? `<span class="dot"></span><span>듣는 중 · 눌러서 멈추기</span>`
+                   : `${svg(ICON.mic)}<span>말로 담기</span>`)
       + `</button>`;
   }else{
     h += `<p class="mic-hint">이 기기에서는 앱 안의 음성 인식이 안 돼요. 아래 칸을 누르고 <b>키보드의 마이크 키</b>로 받아쓰기하면 똑같이 빠릅니다.</p>`;
   }
 
-  h += `<label class="fld"><span class="lb">한국어 표현</span>
-      <textarea id="in-ko" class="${listening?"listening":""}" placeholder="${listening?"말씀하세요…":"예: 아이고, 우리 연우 기특하네"}">${esc(draftKo)}</textarea></label>
-    <label class="fld"><span class="lb">어떤 상황이었나요 (선택)</span>
-      <input type="text" id="in-note" value="${esc(draftNote)}" placeholder="예: 혼자 신발 신고 나왔을 때"></label>
-    <div class="fld"><span class="lb">상황</span><div class="tags" id="sit-tags">
-      ${SITUATIONS.map(s => `<button class="tag" data-sit="${esc(s)}" aria-pressed="${draftSit===s}">${esc(s)}</button>`).join("")}
-    </div></div>
+  h += `<div class="fld">
+      <textarea id="in-ko" class="${listening?"listening":""}" aria-label="한국어 표현"
+        placeholder="${listening?"말씀하세요…":"예: 신발 신자, 밖에 나갈 거야"}">${esc(draftKo)}</textarea>
+    </div>
+    <div class="fld"><span class="lb">어떤 상황이었나요 · 선택</span>
+      <input type="text" id="in-note" value="${esc(draftNote)}" placeholder="예: 유치원 가려고 나서는 길에"></div>
     <button class="cta" id="btn-add">카드로 담기</button>
   </div>`;
 
-  const recent = byNewest().slice(0,4);
+  h += promoCard();
+
+  const recent = byNewest().slice(0,3);
   if(recent.length){
     h += `<div class="sheet"><h2>최근에 담은 것</h2><div class="recent">`
       + recent.map(c => `<div class="r"><span class="ko">${esc(c.ko)}</span>
@@ -356,38 +462,45 @@ function addView(){
 }
 
 function reviewView(){
-  const due = dueCards();
   if(!readyCards().length){
-    return `<div class="empty"><span class="big">아직 복습할 카드가 없어요</span>
-      <p>표현을 담으면 영어와 뉘앙스가 채워진 뒤에 여기로 올라옵니다.</p></div>`;
+    return `<div class="empty"><span class="ring">${svg(ICON.cards)}</span><span class="big">Nothing to review yet</span>
+      <p>표현을 담고 영어가 채워지면 여기로 올라옵니다.</p></div>`;
   }
-  if(!due.length){
-    return `<div class="empty"><span class="big">오늘 몫은 끝!</span>
-      <p>${readyCards().length}장 모두 복습했어요. 내일 다시 열면 잊어버릴 때가 된 카드만 골라서 보여드릴게요.</p></div>`;
+  const q = currentQueue();
+  if(!q.length){
+    return `<div class="empty"><span class="ring">${svg(ICON.check)}</span><span class="big">All done for today</span>
+      <p>${readyCards().length}장 중 오늘 몫을 다 봤어요. 내일 열면 잊어버릴 때가 된 카드만 골라서 보여드릴게요.</p></div>`;
   }
-  if(reviewIdx >= due.length) reviewIdx = 0;
-  const c = due[reviewIdx];
-  const pct = Math.round((reviewIdx / due.length) * 100);
+  if(reviewIdx >= q.length) reviewIdx = 0;
+  const c = cards.find(x => x.id === q[reviewIdx]);
+  if(!c){ reviewIdx = 0; return reviewView(); }
+  const pct = Math.round(((reviewIdx + 1) / q.length) * 100);
 
-  let h = `<div class="progress"><div class="pbar"><i style="width:${pct}%"></i></div>
-    <span class="n">${reviewIdx+1} / ${due.length}</span></div>`;
+  let h = `<div class="promo">
+    <span class="cap">${svg(ICON.play)}복습 중</span>
+    <span class="big">오늘 <em>${reviewIdx+1}</em> / <em>${q.length}</em></span>
+    <span class="track"><i style="width:${Math.max(pct,3)}%"></i></span>
+  </div>`;
 
   if(!flipped){
-    h += `<button class="flip" id="btn-flip">
-      <span class="sit-line"><span class="pill sit">${esc(c.situation||"기타")}</span></span>
+    h += `<div class="card"><button class="face" id="btn-flip">
+      <span class="pill sit">${esc(c.situation||"기타")}</span>
       <span class="ko">${esc(c.ko)}</span>
       ${c.note ? `<span class="note">${esc(c.note)}</span>` : ""}
-      <span class="turn">눌러서 영어 보기</span></button>`;
+      <span class="turn">${svg(ICON.arrow)}탭하면 영어가 나와요</span>
+    </button></div>`;
   }else{
-    h += `<div class="back-wrap"><div class="back">
-        <div class="ask">${esc(c.ko)}</div>
+    h += `<div class="card reveal"><div class="answer">
+        <div class="prompt">${esc(c.ko)}</div>
         <div class="en">${esc(c.en)}</div>
         <div class="blk"><span class="lb">알아둘 점</span><p>${esc(c.nuance)}</p></div>
-        <div class="blk"><span class="lb">${CHILD}에게 이렇게</span>
+        <div class="blk"><span class="lb">${esc(CHILD)}에게 이렇게</span>
           <p class="ex-en">${esc(c.exEn)}</p><p>${esc(c.exKo)}</p></div>
       </div></div>
-      <div class="judge"><button data-grade="0">다시 볼래요</button>
-      <button class="yes" data-grade="1">알겠어요</button></div>`;
+      <div class="judge">
+        <button data-grade="0">다시 볼래요</button>
+        <button class="yes" data-grade="1">알겠어요</button>
+      </div>`;
   }
   return h;
 }
@@ -400,34 +513,39 @@ function listView(){
       설정 탭의 <b>영어 채우기</b>에서 목록을 복사해 Claude에 붙여넣으면 채워집니다.</div></div>`;
   }
   const opts = ["전체","영어 대기"].concat(SITUATIONS);
-  h += `<div class="tags">` + opts.map(o =>
+  h += `<div class="chiprow">` + opts.map(o =>
     `<button class="tag" data-filter="${esc(o)}" aria-pressed="${filter===o}">${esc(o)}</button>`).join("") + `</div>`;
 
   const rows = byNewest().filter(c =>
     filter === "전체" ? true : filter === "영어 대기" ? c.status !== "done" : c.situation === filter);
 
   if(!rows.length){
-    return h + `<div class="empty"><span class="big">여기엔 아직 없어요</span><p>다른 상황을 골라 보세요.</p></div>`;
+    return h + `<div class="empty"><span class="ring">${svg(ICON.list)}</span><span class="big">Nothing here</span><p>다른 상황을 골라 보세요.</p></div>`;
   }
 
   h += `<div class="list">` + rows.map(c => {
     const open = c.id === openId;
     let s = `<div class="item"><button class="hd" data-open="${esc(c.id)}">
-        <span class="ko">${esc(c.ko)}</span>
-        <span class="pill ${c.status==="done"?"done":"wait"}">${c.status==="done"?"준비됨":"대기"}</span></button>`;
-    if(c.status === "done") s += `<div class="en">${esc(c.en)}</div>`;
+        <span class="lines">
+          <span class="en${c.status==="done"?"":" pending"}">${esc(c.status==="done" ? c.en : c.ko)}</span>
+          <span class="ko">${esc(c.status==="done" ? c.ko : (c.note || "영어를 기다리는 중"))}</span>
+        </span>
+        <span class="pill ${c.status==="done"?"done":"wait"}">${c.status==="done"?"준비됨":"대기"}</span>
+      </button>`;
     s += `<div class="meta">${esc(c.situation||"기타")} · ${esc(c.by||"—")} · ${esc(c.at||"")}</div>`;
     if(open){
       s += `<div class="det">`;
       if(c.status === "done"){
         s += `<div><span class="lb">알아둘 점</span><p>${esc(c.nuance)}</p></div>
-              <div><span class="lb">${CHILD}에게 이렇게</span>
+              <div><span class="lb">${esc(CHILD)}에게 이렇게</span>
                 <p class="ex-en">${esc(c.exEn)}</p><p>${esc(c.exKo)}</p></div>`;
-      }else{
-        if(c.note) s += `<div><span class="lb">상황 메모</span><p>${esc(c.note)}</p></div>`;
-        s += `<div><span class="lb">상태</span><p>영어와 뉘앙스 설명을 기다리는 중이에요.</p></div>`;
+      }else if(c.note){
+        s += `<div><span class="lb">상황 메모</span><p>${esc(c.note)}</p></div>`;
       }
-      s += `<button class="del" data-del="${esc(c.id)}">이 카드 지우기</button></div>`;
+      s += `<div><span class="lb">상황</span><div class="tags">`
+        + SITUATIONS.map(t => `<button class="tag" data-settag="${esc(c.id)}|${esc(t)}" aria-pressed="${c.situation===t}">${esc(t)}</button>`).join("")
+        + `</div></div>
+        <button class="del" data-del="${esc(c.id)}">이 카드 지우기</button></div>`;
     }
     return s + `</div>`;
   }).join("") + `</div>`;
@@ -446,18 +564,31 @@ function settingsView(){
     error:      "공유 연결 실패 — 이 기기에는 계속 저장됩니다"
   }[syncMode];
 
-  let h = `<div class="sheet">
+  let h = `<div class="tiles">
+    <div class="tile b"><span class="ic">${svg(ICON.cards)}</span><span class="v">${cards.length}</span><span class="k">전체 카드</span></div>
+    <div class="tile l"><span class="ic">${svg(ICON.clock)}</span><span class="v">${dueCards().length}</span><span class="k">오늘 복습</span></div>
+    <div class="tile p"><span class="ic">${svg(ICON.pen)}</span><span class="v">${p.length}</span><span class="k">영어 대기</span></div>
+  </div>`;
+
+  h += `<div class="sheet">
     <h2>공유</h2>
     <div class="status"><span class="led ${led}"></span><span>${esc(label)}</span></div>`;
   if(syncMode === "error"){
     h += `<p class="hint">확인할 것: <b>${esc(syncNote)}</b></p>
           <button class="ghost full" id="btn-retry">다시 연결해 보기</button>`;
   }
-
-  if(!configured()){
-    h += `<p class="hint">아직 <b>firebase-config.js</b> 가 비어 있어서 공유가 꺼져 있습니다. README 의 순서대로 설정값을 넣으면 이 화면에서 가족 코드를 만들 수 있어요.</p>`;
+  if(configError){
+    h += `<p class="hint"><b>firebase-config.js 를 읽지 못했습니다.</b> 중괄호 { } 안에는
+      <b>apiKey: "…"</b> 같은 줄만 들어가야 합니다. 콘솔에서 복사할 때 딸려 오는
+      <b>const firebaseConfig =</b> 와 맨 끝 <b>;</b> 는 빼고 넣어 주세요.</p>`;
+  }else if(!configured()){
+    h += `<p class="hint">아직 <b>firebase-config.js</b> 가 비어 있어서 공유가 꺼져 있습니다. 설명서 3단계대로 값을 채우면 여기서 가족 코드를 만들 수 있어요.</p>`;
+  }else if(looksLikeSample()){
+    h += `<p class="hint"><b>${esc(looksLikeSample())}.</b> 설명서의 예시 값을 그대로 옮겨 적으신 것 같습니다.
+      Firebase 콘솔 → 프로젝트 설정 → 내 앱에서 웹 앱을 등록하면 진짜 값이 나옵니다.
+      진짜 apiKey 는 <b>AIza</b> 로 시작하는 39자 문자열이에요.</p>`;
   }else if(!family){
-    h += `<p class="hint">한 사람이 <b>가족 코드 만들기</b>를 누르고, 나온 코드나 링크를 배우자에게 보내세요. 상대는 <b>코드로 참여</b>에 그 코드를 넣으면 됩니다.</p>
+    h += `<p class="hint">한 사람이 <b>가족 코드 만들기</b>를 누르고, 나온 링크를 배우자에게 보내면 됩니다.</p>
       <div class="rowbtns">
         <button class="ghost accent" id="btn-newfam">가족 코드 만들기</button>
         <button class="ghost" id="btn-joinfam">코드로 참여</button>
@@ -475,36 +606,37 @@ function settingsView(){
 
   h += `<div class="sheet">
     <h2>영어 채우기</h2>
-    <p class="hint">담아 둔 표현 ${p.length}장이 영어를 기다리고 있어요. 아래 버튼으로 복사해 Claude에 붙여넣고, 돌아온 JSON을 다시 여기에 붙여넣으면 카드가 완성됩니다.</p>
+    <p class="hint">담아 둔 표현 <b>${p.length}장</b>이 영어를 기다리고 있어요. 복사해 Claude에 붙여넣고, 돌아온 JSON을 아래 칸에 붙여넣으면 카드가 완성됩니다.</p>
     <button class="ghost full ${p.length?"accent":""}" id="btn-copy" ${p.length?"":"disabled"}>대기 중인 표현 복사하기</button>
-    <label class="fld"><span class="lb">Claude가 준 JSON 붙여넣기</span>
-      <textarea id="in-json" class="mono" placeholder='[{"id":"c123","en":"...","nuance":"...","exEn":"...","exKo":"..."}]'></textarea></label>
+    <div class="fld"><span class="lb">Claude가 준 JSON 붙여넣기</span>
+      <textarea id="in-json" class="mono" placeholder='[{"id":"c123","en":"…","nuance":"…","exEn":"…","exKo":"…"}]'></textarea></div>
     <button class="ghost full" id="btn-apply">붙여넣은 내용으로 채우기</button>
   </div>`;
 
-  h += `<div class="sheet">
-    <h2>앱</h2>`;
+  h += `<div class="sheet"><h2>앱</h2>`;
   if(installEvt){
     h += `<button class="ghost full accent" id="btn-install">홈 화면에 추가</button>`;
   }else{
     h += `<p class="hint">아이폰은 사파리 하단 <b>공유 → 홈 화면에 추가</b>, 안드로이드는 크롬 메뉴의 <b>앱 설치</b>를 누르면 홈 화면 아이콘이 생깁니다.</p>`;
   }
   h += `<button class="ghost full" id="btn-export">카드 전체 내려받기 (JSON)</button>
-    <p class="hint">카드 ${cards.length}장 · 복습 진도는 기기마다 따로 저장됩니다.</p>
+    <p class="hint">복습 진도는 아빠·엄마가 기기마다 따로 저장됩니다.</p>
   </div>`;
   return h;
 }
 
 function navView(){
   const d = dueCards().length, p = pendingCards().length;
-  return [
-    {k:"add", n:"담기",    c: p ? p + " 대기" : ""},
-    {k:"rev", n:"복습",    c: d ? d + "장" : "완료"},
-    {k:"all", n:"모아보기", c: cards.length + "장"},
-    {k:"set", n:"설정",    c: syncMode === "pending" ? (outbox.length + tombs.length) + " 대기"
-                            : syncMode === "cloud" ? "공유" : ""}
-  ].map(t => `<button role="tab" data-tab="${t.k}" aria-selected="${tab===t.k}">
-      <span>${t.n}</span><span class="cnt">${t.c ? esc(t.c) : "&nbsp;"}</span></button>`).join("");
+  const items = [
+    {k:"add", n:"담기",    i:ICON.mic,   b: p ? p : 0, calm:false},
+    {k:"rev", n:"복습",    i:ICON.cards, b: d ? d : 0, calm:true},
+    {k:"all", n:"모아보기", i:ICON.list,  b: 0, calm:true},
+    {k:"set", n:"설정",    i:ICON.gear,  b: syncMode === "pending" ? (outbox.length + tombs.length) : 0, calm:false}
+  ];
+  return items.map(t => `<button role="tab" data-tab="${t.k}" aria-selected="${tab===t.k}">
+      ${svg(t.i)}<span>${t.n}</span>
+      ${t.b ? `<span class="badge${t.calm?" calm":""}">${t.b > 99 ? "99+" : t.b}</span>` : ""}
+    </button>`).join("");
 }
 
 function render(){
@@ -541,13 +673,13 @@ function addCard(){
     seq: Date.now(),
     ko,
     note: ((noteEl ? noteEl.value : draftNote) || "").trim(),
-    situation: draftSit || "기타",
+    situation: "기타",   // 담을 땐 고르지 않습니다. 나중에 모아보기에서 붙일 수 있어요
     by: who || "—",
     at: today(),
     status: "pending"
   };
   cards.push(card);
-  draftSit = null; draftKo = ""; draftNote = ""; heardFinal = ""; draftBase = "";
+  draftKo = ""; draftNote = ""; heardFinal = ""; draftBase = "";
   SS.set("ycard.draftKo",""); SS.set("ycard.draftNote","");
   render();
   toast("담았어요 · " + (ko.length > 14 ? ko.slice(0,14) + "…" : ko));
@@ -588,7 +720,7 @@ function exportJson(){
   const blob = new Blob([JSON.stringify(cards, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url; a.download = `연우말카드-${today()}.json`;
+  a.href = url; a.download = `EllieEnglish-${today()}.json`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
@@ -621,12 +753,17 @@ document.addEventListener("click", e => {
   const t = e.target.closest("button");
   if(!t) return;
 
-  if(t.dataset.tab){ tab = t.dataset.tab; SS.set("ycard.tab", tab); flipped = false; reviewIdx = 0; render(); return; }
+  if(t.dataset.tab){
+    tab = t.dataset.tab; SS.set("ycard.tab", tab);
+    flipped = false; reviewIdx = 0;
+    if(tab === "rev") buildReviewQueue();   // 들어올 때마다 순서를 새로 섞습니다
+    render(); return;
+  }
   if(t.dataset.who){ who = t.dataset.who; LS.set("ycard.who", who); render(); return; }
-  if(t.dataset.sit){
-    draftSit = draftSit === t.dataset.sit ? null : t.dataset.sit;
-    document.querySelectorAll("#sit-tags .tag").forEach(b =>
-      b.setAttribute("aria-pressed", String(b.dataset.sit === draftSit)));
+  if(t.dataset.settag){
+    const [id, tag] = t.dataset.settag.split("|");
+    const c = cards.find(x => x.id === id);
+    if(c && c.situation !== tag){ c.situation = tag; render(); pushCard(c); }
     return;
   }
   if(t.dataset.filter){ filter = t.dataset.filter; SS.set("ycard.filter", filter); openId = null; render(); return; }
@@ -663,7 +800,7 @@ document.addEventListener("click", e => {
     case "btn-copy": {
       const lines = pendingCards().map(c =>
         `- id: ${c.id} | [${c.situation||"기타"}] ${c.ko}${c.note ? "  (상황: " + c.note + ")" : ""}`).join("\n");
-      const prompt = `연우 말 카드에 담아둔 표현들이야. ${CHILD}(43개월, 영어 유치원 다니는 중)에게 실제로 쓸 수 있는 영어로 채워줘.\n`
+      const prompt = `Ellie English 앱에 담아둔 표현들이야. ${CHILD}(43개월, 영어 유치원 다니는 중)에게 실제로 쓸 수 있는 영어로 채워줘.\n`
         + `아래 형식의 JSON 배열만 답으로 줘. id는 그대로 유지해줘.\n`
         + `[{"id":"...","en":"영어 표현","nuance":"왜 한국어 그대로는 안 옮겨지는지","exEn":"아이에게 쓰는 영어 예문","exKo":"그 예문의 한국어"}]\n\n`
         + lines;
@@ -694,6 +831,7 @@ if(short === "add" || short === "rev" || short === "all" || short === "set"){
   history.replaceState(null, "", location.pathname);
 }
 
+if(tab === "rev") buildReviewQueue();
 render();
 
 // 참여 링크(#f=코드)로 열렸을 때
@@ -711,8 +849,8 @@ if(m && m[1] && m[1] !== family){
 
 if(firstRun){ tab = "add"; SS.set("ycard.tab", "add"); }
 
+/* 서비스 워커 등록. window.load 를 기다리지 않습니다 —
+   구글 폰트 같은 외부 자원이 느리면 load 가 늦게 떠서 등록도 같이 밀립니다. */
 if("serviceWorker" in navigator){
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
-  });
+  navigator.serviceWorker.register("sw.js").catch(() => {});
 }
