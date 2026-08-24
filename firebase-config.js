@@ -24,12 +24,12 @@
 // ────────────────────────────────────────────────────────────
 
 export const FIREBASE_CONFIG = {
-  apiKey:            "",
-  authDomain:        "",
-  projectId:         "",
-  storageBucket:     "",
-  messagingSenderId: "",
-  appId:             ""
+  apiKey: "AIzaSyAgP0Up3ou6coyySiHA7V0Yri8hTFwL1fw",
+  authDomain: "yeonwoo-cards.firebaseapp.com",
+  projectId: "yeonwoo-cards",
+  storageBucket: "yeonwoo-cards.firebasestorage.app",
+  messagingSenderId: "750583383208",
+  appId: "1:750583383208:web:a54099900f47210575ee9d"
 };
 
 // Firebase JS SDK 버전. 특별한 이유가 없으면 그대로 두세요.
