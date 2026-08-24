@@ -39,7 +39,10 @@ const ICON = {
   bolt:  '<path d="M13 2.5 4.5 13.5H11l-1 8L19.5 10H13z"/>',
   clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 1.8"/>',
   pen:   '<path d="M16.5 3.5a2.5 2.5 0 0 1 3.5 3.5L8 19l-4.5 1.5L5 16z"/>',
-  play:  '<path d="M8.5 5.5 18 12l-9.5 6.5z"/>'
+  play:  '<path d="M8.5 5.5 18 12l-9.5 6.5z"/>',
+  sound: '<path d="M11 4.5 6.5 8.5H3.5v7h3L11 19.5z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6"/><path d="M18.4 6.3a8 8 0 0 1 0 11.4"/>',
+  search:'<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>',
+  close: '<path d="m6 6 12 12M18 6 6 18"/>'
 };
 const svg = d => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"'
   + ' stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + d + '</svg>';
@@ -95,11 +98,12 @@ let family     = LS.get("ycard.family", null);
 let tab        = SS.get("ycard.tab", "add");
 let filter     = SS.get("ycard.filter", "전체");
 let draftKo    = SS.get("ycard.draftKo", "");
-let draftNote  = SS.get("ycard.draftNote", "");
 let openId     = null;
 let flipped    = false;
 let reviewIdx  = 0;
-let reviewQueue = [];          // 이번 복습 세션의 카드 순서 (무작위)
+let reviewQueue = [];          // 이번 복습 세션의 카드 순서
+let reviewTotal = 0;           // 세션 시작 때의 장수 (진도 표시용)
+let query      = SS.get("ycard.q", "");   // 모아보기 검색어
 let syncMode   = "local";      // local | connecting | cloud | pending | error
 let syncNote   = "";
 let installEvt = null;
@@ -114,6 +118,8 @@ const byNewest     = () => cards.slice().sort((a,b) => (b.seq||0) - (a.seq||0));
 function persistLocal(){ LS.set("ycard.cards", cards); }
 
 /* ───────────────── review schedule (per device, per person) ───────────────── */
+/* 복습 진도와 미룬 횟수는 [이 기기] × [아빠/엄마] 별로 따로 저장됩니다.
+   같은 카드라도 아빠 폰과 엄마 폰에서 나오는 순서가 다릅니다. */
 const srsKey = () => "ycard.srs." + (who || "나");
 const srs    = () => LS.get(srsKey(), {});
 function dueCards(){
@@ -129,6 +135,7 @@ function grade(id, ok){
     r.due = d.toISOString().slice(0,10);
   }else{
     r.step = -1; r.due = today();
+    r.again = (r.again || 0) + 1;   // 몇 번이나 미뤘는지 — 다음 복습 순서에 씁니다
   }
   s[id] = r; LS.set(srsKey(), s);
 }
@@ -144,7 +151,17 @@ function shuffle(arr){
   return a;
 }
 function buildReviewQueue(){
-  reviewQueue = shuffle(dueCards().map(c => c.id));
+  const rec = srs();
+  const tiers = new Map();               // 미룬 횟수 → 카드 id 묶음
+  dueCards().forEach(c => {
+    const n = (rec[c.id] && rec[c.id].again) || 0;
+    if(!tiers.has(n)) tiers.set(n, []);
+    tiers.get(n).push(c.id);
+  });
+  // 많이 미룬 것부터 앞으로, 같은 횟수끼리는 매번 섞습니다
+  reviewQueue = [...tiers.keys()].sort((a, b) => b - a)
+    .flatMap(n => shuffle(tiers.get(n)));
+  reviewTotal = reviewQueue.length;
   reviewIdx = 0; flipped = false;
 }
 function currentQueue(){
@@ -381,6 +398,40 @@ function stopListening(){
   if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(e){} }
 }
 
+
+/* ───────────────── 영어 읽어 주기 ─────────────────
+   브라우저에 내장된 음성 합성을 씁니다. 인터넷도 계정도 필요 없고,
+   아이폰 사파리와 안드로이드 크롬 모두 됩니다. 목소리 목록은 나중에
+   채워지는 기기가 있어 미리 한 번 깨워 둡니다. */
+const TTS = typeof window.speechSynthesis !== "undefined"
+         && typeof window.SpeechSynthesisUtterance !== "undefined";
+let enVoice = null;
+function pickVoice(){
+  if(!TTS) return;
+  const vs = speechSynthesis.getVoices() || [];
+  enVoice = vs.find(v => /^en[-_]US/i.test(v.lang) && /samantha|aria|jenny|allison|ava|female/i.test(v.name))
+         || vs.find(v => /^en[-_]US/i.test(v.lang))
+         || vs.find(v => /^en/i.test(v.lang)) || null;
+}
+if(TTS){
+  pickVoice();
+  speechSynthesis.addEventListener?.("voiceschanged", pickVoice);
+}
+function speak(text){
+  if(!TTS || !text){ toast("이 기기에서는 소리 읽기가 안 돼요"); return; }
+  try{
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(String(text));
+    u.lang = "en-US"; u.rate = 0.9; u.pitch = 1.02;
+    if(enVoice) u.voice = enVoice;
+    speechSynthesis.speak(u);
+  }catch(e){ toast("소리 읽기에 실패했어요"); }
+}
+function sayBtn(id, kind, label){
+  if(!TTS) return "";
+  return `<button class="say" data-say="${id}|${kind}" aria-label="${label}">${svg(ICON.sound)}</button>`;
+}
+
 /* ───────────────── views ───────────────── */
 
 function header(){
@@ -425,10 +476,10 @@ function addView(){
     카드는 이 기기에 정상적으로 저장되니 계속 쓰셔도 됩니다. 고치는 방법은 설정 탭에 있습니다.</div></div>`;
   if(!who) h += `<div class="banner"><div>오른쪽 위에서 <b>아빠 / 엄마</b>를 골라 주세요. 누가 담은 카드인지 표시되고, 복습 진도도 각자 따로 갑니다.</div></div>`;
 
-  h += `<div class="hero"><h2>오늘 하신 말,<br><em>영어로 담아요.</em></h2></div>`;
+  h += `<div class="hero"><h2>${esc(CHILD)}와 영어로<br><em>대화해봐요.</em></h2></div>`;
 
   h += `<div class="sheet">
-    <h2>방금 ${esc(CHILD)}에게 뭐라고 하셨어요?</h2>
+    <h2>${esc(CHILD)}에게 영어로 뭐라고 말하고 싶으셨어요?</h2>
     <p class="hint">영어로 바로 안 나온 우리말을 그대로 담아 두세요. 영어 표현과 설명은 나중에 채워집니다.</p>`;
 
   if(micState !== "none"){
@@ -444,8 +495,6 @@ function addView(){
       <textarea id="in-ko" class="${listening?"listening":""}" aria-label="한국어 표현"
         placeholder="${listening?"말씀하세요…":"예: 신발 신자, 밖에 나갈 거야"}">${esc(draftKo)}</textarea>
     </div>
-    <div class="fld"><span class="lb">어떤 상황이었나요 · 선택</span>
-      <input type="text" id="in-note" value="${esc(draftNote)}" placeholder="예: 유치원 가려고 나서는 길에"></div>
     <button class="cta" id="btn-add">카드로 담기</button>
   </div>`;
 
@@ -476,15 +525,22 @@ function reviewView(){
   if(!c){ reviewIdx = 0; return reviewView(); }
   const pct = Math.round(((reviewIdx + 1) / q.length) * 100);
 
+  const total = Math.max(reviewTotal, q.length);
+  const nth   = Math.min(total - q.length + 1, total);
+  const bar   = Math.round((nth / total) * 100);
   let h = `<div class="promo">
-    <span class="cap">${svg(ICON.play)}복습 중</span>
-    <span class="big">오늘 <em>${reviewIdx+1}</em> / <em>${q.length}</em></span>
-    <span class="track"><i style="width:${Math.max(pct,3)}%"></i></span>
+    <span class="cap">${svg(ICON.play)}${esc(who || "나")} 복습 중</span>
+    <span class="big">오늘 <em>${nth}</em> / <em>${total}</em></span>
+    <span class="track"><i style="width:${Math.max(bar,3)}%"></i></span>
   </div>`;
 
   if(!flipped){
+    const mine = (srs()[c.id] || {}).again || 0;
     h += `<div class="card"><button class="face" id="btn-flip">
-      <span class="pill sit">${esc(c.situation||"기타")}</span>
+      <span class="chips">
+        <span class="pill sit">${esc(c.situation||"기타")}</span>
+        ${mine ? `<span class="pill wait">${who || "나"}가 ${mine}번 미룸</span>` : ""}
+      </span>
       <span class="ko">${esc(c.ko)}</span>
       ${c.note ? `<span class="note">${esc(c.note)}</span>` : ""}
       <span class="turn">${svg(ICON.arrow)}탭하면 영어가 나와요</span>
@@ -492,13 +548,13 @@ function reviewView(){
   }else{
     h += `<div class="card reveal"><div class="answer">
         <div class="prompt">${esc(c.ko)}</div>
-        <div class="en">${esc(c.en)}</div>
+        <div class="en-row"><span class="en">${esc(c.en)}</span>${sayBtn(c.id,"en","영어 문장 읽어 주기")}</div>
         <div class="blk"><span class="lb">알아둘 점</span><p>${esc(c.nuance)}</p></div>
         <div class="blk"><span class="lb">${esc(CHILD)}에게 이렇게</span>
-          <p class="ex-en">${esc(c.exEn)}</p><p>${esc(c.exKo)}</p></div>
+          <p class="ex-en">${esc(c.exEn)}${sayBtn(c.id,"ex","예문 읽어 주기")}</p><p>${esc(c.exKo)}</p></div>
       </div></div>
       <div class="judge">
-        <button data-grade="0">다시 볼래요</button>
+        <button data-grade="0">다음에 다시 볼래요</button>
         <button class="yes" data-grade="1">알겠어요</button>
       </div>`;
   }
@@ -512,15 +568,25 @@ function listView(){
     h += `<div class="banner warn"><div><b>${p.length}장</b>이 영어를 기다리고 있어요.
       설정 탭의 <b>영어 채우기</b>에서 목록을 복사해 Claude에 붙여넣으면 채워집니다.</div></div>`;
   }
+  h += `<div class="search">${svg(ICON.search)}
+    <input type="text" id="in-search" value="${esc(query)}" placeholder="한국어·영어 아무거나 검색" autocomplete="off">
+    ${query ? `<button class="clear" id="btn-clearq" aria-label="검색어 지우기">${svg(ICON.close)}</button>` : ""}
+  </div>`;
+
   const opts = ["전체","영어 대기"].concat(SITUATIONS);
   h += `<div class="chiprow">` + opts.map(o =>
     `<button class="tag" data-filter="${esc(o)}" aria-pressed="${filter===o}">${esc(o)}</button>`).join("") + `</div>`;
 
+  const q = query.trim().toLowerCase();
+  const hit = c => !q || [c.ko, c.en, c.nuance, c.exEn, c.exKo, c.note, c.situation]
+    .some(v => v && String(v).toLowerCase().includes(q));
+
   const rows = byNewest().filter(c =>
-    filter === "전체" ? true : filter === "영어 대기" ? c.status !== "done" : c.situation === filter);
+    (filter === "전체" ? true : filter === "영어 대기" ? c.status !== "done" : c.situation === filter) && hit(c));
 
   if(!rows.length){
-    return h + `<div class="empty"><span class="ring">${svg(ICON.list)}</span><span class="big">Nothing here</span><p>다른 상황을 골라 보세요.</p></div>`;
+    return h + `<div class="empty"><span class="ring">${svg(ICON.search)}</span><span class="big">No results</span>
+      <p>${query ? `"${esc(query)}" 와 맞는 카드가 없어요.` : "다른 상황을 골라 보세요."}</p></div>`;
   }
 
   h += `<div class="list">` + rows.map(c => {
@@ -538,7 +604,7 @@ function listView(){
       if(c.status === "done"){
         s += `<div><span class="lb">알아둘 점</span><p>${esc(c.nuance)}</p></div>
               <div><span class="lb">${esc(CHILD)}에게 이렇게</span>
-                <p class="ex-en">${esc(c.exEn)}</p><p>${esc(c.exKo)}</p></div>`;
+                <p class="ex-en">${esc(c.exEn)}${sayBtn(c.id,"ex","예문 읽어 주기")}</p><p>${esc(c.exKo)}</p></div>`;
       }else if(c.note){
         s += `<div><span class="lb">상황 메모</span><p>${esc(c.note)}</p></div>`;
       }
@@ -568,6 +634,28 @@ function settingsView(){
     <div class="tile b"><span class="ic">${svg(ICON.cards)}</span><span class="v">${cards.length}</span><span class="k">전체 카드</span></div>
     <div class="tile l"><span class="ic">${svg(ICON.clock)}</span><span class="v">${dueCards().length}</span><span class="k">오늘 복습</span></div>
     <div class="tile p"><span class="ic">${svg(ICON.pen)}</span><span class="v">${p.length}</span><span class="k">영어 대기</span></div>
+  </div>`;
+
+  const per = ["아빠","엄마"].map(p => {
+    const rec = LS.get("ycard.srs." + p, {});
+    const vals = Object.values(rec);
+    return {
+      p,
+      seen: vals.length,
+      again: vals.reduce((n, r) => n + (r.again || 0), 0)
+    };
+  });
+  h += `<div class="sheet">
+    <h2>복습 진도</h2>
+    <p class="hint">복습 순서와 <b>"다음에 다시 볼래요"</b> 횟수는 <b>사람마다 따로</b> 쌓입니다.
+      많이 미룬 카드가 그 사람의 다음 복습에서 앞으로 옵니다. 카드 자체는 두 분이 함께 보고,
+      진도만 각자 갑니다.</p>
+    <div class="who-stat">
+      ${per.map(x => `<div class="${x.p === who ? "me" : ""}">
+        <span class="n">${esc(x.p)}${x.p === who ? " · 나" : ""}</span>
+        <span class="d"><b>${x.seen}</b>장 봄 · <b>${x.again}</b>번 미룸</span>
+      </div>`).join("")}
+    </div>
   </div>`;
 
   h += `<div class="sheet">
@@ -667,20 +755,19 @@ function addCard(){
   const koEl = document.getElementById("in-ko");
   const ko = ((koEl ? koEl.value : draftKo) || "").trim();
   if(!ko){ toast("표현을 적어 주세요"); return; }
-  const noteEl = document.getElementById("in-note");
   const card = {
     id: "c" + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
     seq: Date.now(),
     ko,
-    note: ((noteEl ? noteEl.value : draftNote) || "").trim(),
+    note: "",
     situation: "기타",   // 담을 땐 고르지 않습니다. 나중에 모아보기에서 붙일 수 있어요
     by: who || "—",
     at: today(),
     status: "pending"
   };
   cards.push(card);
-  draftKo = ""; draftNote = ""; heardFinal = ""; draftBase = "";
-  SS.set("ycard.draftKo",""); SS.set("ycard.draftNote","");
+  draftKo = ""; heardFinal = ""; draftBase = "";
+  SS.set("ycard.draftKo","");
   render();
   toast("담았어요 · " + (ko.length > 14 ? ko.slice(0,14) + "…" : ko));
   pushCard(card);
@@ -759,7 +846,26 @@ document.addEventListener("click", e => {
     if(tab === "rev") buildReviewQueue();   // 들어올 때마다 순서를 새로 섞습니다
     render(); return;
   }
-  if(t.dataset.who){ who = t.dataset.who; LS.set("ycard.who", who); render(); return; }
+  if(t.dataset.who){
+    who = t.dataset.who; LS.set("ycard.who", who);
+    /* 복습 진도도 "다음에 다시 볼래요" 횟수도 사람마다 따로 쌓입니다.
+       사람이 바뀌면 그 사람 기준으로 순서를 새로 짜야 합니다. */
+    buildReviewQueue();
+    render(); return;
+  }
+  if(t.dataset.say){
+    const [id, kind] = t.dataset.say.split("|");
+    const c = cards.find(x => x.id === id);
+    if(c) speak(kind === "ex" ? (c.exEn || c.en) : c.en);
+    return;
+  }
+  if(t.id === "btn-clearq"){
+    query = ""; SS.set("ycard.q", "");
+    render();
+    const el = document.getElementById("in-search");
+    if(el) el.focus();
+    return;
+  }
   if(t.dataset.settag){
     const [id, tag] = t.dataset.settag.split("|");
     const c = cards.find(x => x.id === id);
@@ -774,10 +880,13 @@ document.addEventListener("click", e => {
     openId = null; render(); dropCard(id); return;
   }
   if(t.dataset.grade){
-    const c = dueCards()[reviewIdx];
-    if(c) grade(c.id, t.dataset.grade === "1");
+    /* 채점 대상은 "지금 화면에 보이는" 카드여야 합니다.
+       섞인 순서(currentQueue)가 아니라 dueCards() 순서를 쓰면
+       엉뚱한 카드가 채점돼서 화면이 그대로 멈춥니다. */
+    const id = currentQueue()[reviewIdx];
+    if(id) grade(id, t.dataset.grade === "1");
     flipped = false;
-    if(t.dataset.grade === "0") reviewIdx += 1;
+    if(t.dataset.grade === "0") reviewIdx += 1;   // 미룬 카드는 뒤로 돌려보냅니다
     render(); return;
   }
 
@@ -811,7 +920,13 @@ document.addEventListener("click", e => {
 
 document.addEventListener("input", e => {
   if(e.target.id === "in-ko"){ draftKo = e.target.value; SS.set("ycard.draftKo", draftKo); }
-  if(e.target.id === "in-note"){ draftNote = e.target.value; SS.set("ycard.draftNote", draftNote); }
+  if(e.target.id === "in-search"){
+    query = e.target.value; SS.set("ycard.q", query);
+    render();
+    // 다시 그리면 포커스가 날아가므로 커서를 끝에 붙여 되돌려 놓습니다
+    const el = document.getElementById("in-search");
+    if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(_){} }
+  }
 });
 
 document.addEventListener("keydown", e => {

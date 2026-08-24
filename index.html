@@ -240,7 +240,7 @@ textarea.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size
 .answer .prompt{padding:22px 22px 0; text-align:center; font-size:14.5px; color:var(--muted); line-height:1.5}
 .answer .en{
   font-family:var(--f-en); font-weight:600; font-size:clamp(25px,6.6vw,32px); line-height:1.28;
-  letter-spacing:-0.03em; color:var(--violet); padding:9px 22px 24px; text-align:center; text-wrap:balance;
+  letter-spacing:-0.03em; color:var(--violet); text-align:center; text-wrap:balance;
 }
 .blk{padding:18px 22px; border-top:1px solid var(--line-soft); display:flex; flex-direction:column; gap:7px}
 .blk p{margin:0; font-size:14.5px; line-height:1.75; color:var(--ink-2)}
@@ -293,6 +293,53 @@ textarea.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size
 :root[data-theme="dark"] .tile .ic,
 :root:not([data-theme="light"]) .tile .ic{background:rgba(255,255,255,.08)}
 @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .tile .ic{background:rgba(255,255,255,.62)}}
+
+
+/* ── 검색 · 읽어 주기 ─────────────────────────────────── */
+.search{
+  display:flex; align-items:center; gap:9px; background:var(--surface);
+  border:1.5px solid transparent; border-radius:16px; padding:0 13px;
+  box-shadow:var(--shadow); transition:border-color .15s ease;
+}
+.search:focus-within{border-color:var(--violet)}
+.search > svg{width:18px; height:18px; flex:none; color:var(--muted); stroke-width:1.9}
+.search input[type=text]{
+  border:0; background:transparent; box-shadow:none; padding:14px 0;
+  font-size:15.5px; border-radius:0;
+}
+.search input[type=text]:focus{border:0; background:transparent}
+.search .clear{
+  border:0; background:var(--surface-2); color:var(--muted); flex:none;
+  width:26px; height:26px; border-radius:50%; display:grid; place-items:center; padding:0;
+}
+.search .clear svg{width:13px; height:13px; stroke-width:2.2}
+
+.en-row{display:flex; align-items:center; justify-content:center; gap:10px; padding:9px 22px 24px}
+.en-row .en{padding:0}
+.say{
+  border:0; background:var(--violet-soft); color:var(--violet); flex:none;
+  width:34px; height:34px; border-radius:50%; display:inline-grid; place-items:center;
+  padding:0; vertical-align:middle; transition:transform .12s ease;
+}
+.say:active{transform:scale(.9)}
+.say svg{width:17px; height:17px; stroke-width:1.9}
+p.ex-en .say{width:28px; height:28px; margin-left:8px}
+p.ex-en .say svg{width:14px; height:14px}
+
+
+/* ── 사람별 복습 진도 ─────────────────────────────────── */
+.who-stat{display:grid; grid-template-columns:1fr 1fr; gap:9px}
+.who-stat > div{
+  background:var(--bg); border:1.5px solid transparent; border-radius:16px;
+  padding:13px 14px; display:flex; flex-direction:column; gap:3px;
+}
+.who-stat > div.me{border-color:var(--violet); background:var(--violet-soft)}
+.who-stat .n{font-size:13px; font-weight:700; color:var(--ink)}
+.who-stat .d{font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums}
+.who-stat .d b{font-family:var(--f-en); font-size:14px; font-weight:600; color:var(--ink-2)}
+.who-stat > div.me .d b{color:var(--violet)}
+
+.face .chips{display:flex; flex-wrap:wrap; gap:6px; justify-content:center}
 
 /* ── settings ─────────────────────────────────────────── */
 .code{
@@ -364,7 +411,7 @@ nav .badge.calm{background:var(--violet); color:var(--on-violet)}
             <b>const firebaseConfig =</b> 나 맨 끝의 <b>;</b> 까지 같이 붙여넣으면 앱이 안 뜹니다.</li>
         <li>저장소 <b>맨 위</b>에 index.html · app.js · seed.js · firebase-config.js · sw.js 가
             나란히 있는지 보세요. 폴더 안에 들어가 있으면 안 됩니다.</li>
-        <li>고친 뒤에도 그대로면 <b>sw.js</b> 의 ellie-english-v2 숫자를 하나 올리고 다시 Commit 하세요.</li>
+        <li>고친 뒤에도 그대로면 <b>sw.js</b> 의 ellie-english-v4 숫자를 하나 올리고 다시 Commit 하세요.</li>
       </ol>
     </div>
   </div>
