@@ -37,6 +37,7 @@ const ICON = {
   check: '<path d="m4.5 12.5 5 5L20 6.5"/>',
   arrow: '<path d="M12 4.5v13"/><path d="m6.5 12.5 5.5 5.5 5.5-5.5"/>',
   bolt:  '<path d="M13 2.5 4.5 13.5H11l-1 8L19.5 10H13z"/>',
+  home:  '<path d="M3.5 10.2 12 3.5l8.5 6.7V19a1.8 1.8 0 0 1-1.8 1.8H5.3A1.8 1.8 0 0 1 3.5 19z"/><path d="M9.4 20.8v-6.3h5.2v6.3"/>',
   clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 1.8"/>',
   pen:   '<path d="M16.5 3.5a2.5 2.5 0 0 1 3.5 3.5L8 19l-4.5 1.5L5 16z"/>',
   play:  '<path d="M8.5 5.5 18 12l-9.5 6.5z"/>',
@@ -355,6 +356,8 @@ window.addEventListener("online", () => {
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let micState  = SR ? SS.get("ycard.mic", "ok") : "none";
 let rec = null, listening = false, heardFinal = "", draftBase = "";
+let listenMode = "capture";        // capture = 카드 담기,  search = 문장 찾기
+let composing  = false;            // 한글 조합 중인지 (조합 중에는 다시 그리지 않습니다)
 
 function setDraftKo(v){
   draftKo = v; SS.set("ycard.draftKo", v);
@@ -366,8 +369,9 @@ function micBlocked(){
   toast("마이크를 쓸 수 없어요. 키보드 마이크 키를 써 보세요");
   render();
 }
-function startListening(){
+function startListening(mode){
   if(!SR || listening) return;
+  listenMode = mode === "search" ? "search" : "capture";
   heardFinal = "";
   try{ rec = new SR(); }catch(e){ micBlocked(); return; }
   rec.lang = "ko-KR"; rec.continuous = true; rec.interimResults = true;
@@ -377,7 +381,14 @@ function startListening(){
       const r = ev.results[i];
       if(r.isFinal) heardFinal += r[0].transcript; else interim += r[0].transcript;
     }
-    setDraftKo(((draftBase ? draftBase + " " : "") + heardFinal + interim).trim());
+    const text = (heardFinal + interim).trim();
+    if(listenMode === "search"){
+      const el = document.getElementById("voice-text");
+      if(el) el.textContent = text || "말씀하세요…";
+      query = text;
+    }else{
+      setDraftKo(((draftBase ? draftBase + " " : "") + heardFinal + interim).trim());
+    }
   };
   rec.onerror = ev => {
     const e = ev && ev.error;
@@ -385,17 +396,36 @@ function startListening(){
     listening = false; render();
     if(e === "no-speech") toast("소리가 안 들렸어요");
   };
-  rec.onend = () => { if(listening){ listening = false; render(); } };
+  rec.onend = () => {
+    if(!listening) return;
+    listening = false;
+    if(listenMode === "search"){ finishVoiceSearch(); return; }
+    render();
+  };
   draftBase = draftKo;
   try{ rec.start(); }catch(e){ micBlocked(); return; }
   listening = true; render();
 }
 function stopListening(){
+  const wasSearch = listenMode === "search";
   listening = false;
   if(rec){ try{ rec.stop(); }catch(e){} }
+  if(wasSearch){ finishVoiceSearch(); return; }
   render();
   const el = document.getElementById("in-ko");
   if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(e){} }
+}
+
+/* 말로 찾기가 끝나면 모아보기로 넘어가 결과를 보여 줍니다. */
+function finishVoiceSearch(){
+  const q = (query || "").trim();
+  SS.set("ycard.q", q);
+  if(!q){ render(); toast("소리가 안 들렸어요"); return; }
+  tab = "all"; SS.set("ycard.tab", "all");
+  openId = null;
+  render();
+  const found = document.querySelectorAll("#list-out .item").length;
+  toast(found ? `"${q}" · ${found}장 찾았어요` : `"${q}" 와 맞는 카드가 없어요`);
 }
 
 
@@ -476,27 +506,43 @@ function addView(){
     카드는 이 기기에 정상적으로 저장되니 계속 쓰셔도 됩니다. 고치는 방법은 설정 탭에 있습니다.</div></div>`;
   if(!who) h += `<div class="banner"><div>오른쪽 위에서 <b>아빠 / 엄마</b>를 골라 주세요. 누가 담은 카드인지 표시되고, 복습 진도도 각자 따로 갑니다.</div></div>`;
 
-  h += `<div class="hero"><h2>${esc(CHILD)}와 영어로<br><em>대화해봐요.</em></h2></div>`;
+  h += `<div class="hero"><h2>${esc(CHILD)}와 영어로 <em>대화해봐요.</em></h2></div>`;
+
+  // 기억이 안 나는 문장을 말로 찾기 — 누르면 모아보기에서 결과가 뜹니다
+  if(micState !== "none"){
+    h += `<div class="voice-find ${listening && listenMode === "search" ? "on" : ""}">
+      <button class="vf-go" data-tab="all" aria-label="모아보기에서 찾기">
+        ${svg(ICON.search)}
+        <span id="voice-text">${listening && listenMode === "search"
+          ? esc(query || "말씀하세요…") : "기억 안 나는 문장 찾기"}</span>
+      </button>
+      <button class="vf-mic" id="btn-findmic" aria-label="말로 찾기">
+        ${listening && listenMode === "search" ? `<span class="dot"></span>` : svg(ICON.mic)}
+      </button>
+    </div>`;
+  }
 
   h += `<div class="sheet">
     <h2>${esc(CHILD)}에게 영어로 뭐라고 말하고 싶으셨어요?</h2>
-    <p class="hint">영어로 바로 안 나온 우리말을 그대로 담아 두세요. 영어 표현과 설명은 나중에 채워집니다.</p>`;
+    <div class="fld">
+      <textarea id="in-ko" class="${listening && listenMode === "capture" ? "listening" : ""}" aria-label="한국어 표현"
+        placeholder="${listening && listenMode === "capture" ? "말씀하세요…" : "예: 신발 신자, 밖에 나갈 거야"}">${esc(draftKo)}</textarea>
+    </div>
+    <div class="actions">`;
 
   if(micState !== "none"){
-    h += `<button class="mic" id="btn-mic" data-on="${listening?1:0}">`
-      + (listening ? `<span class="dot"></span><span>듣는 중 · 눌러서 멈추기</span>`
-                   : `${svg(ICON.mic)}<span>말로 담기</span>`)
+    h += `<button class="mic" id="btn-mic" data-on="${listening && listenMode === "capture" ? 1 : 0}">`
+      + (listening && listenMode === "capture"
+          ? `<span class="dot"></span><span>멈추기</span>`
+          : `${svg(ICON.mic)}<span>말로 담기</span>`)
       + `</button>`;
-  }else{
-    h += `<p class="mic-hint">이 기기에서는 앱 안의 음성 인식이 안 돼요. 아래 칸을 누르고 <b>키보드의 마이크 키</b>로 받아쓰기하면 똑같이 빠릅니다.</p>`;
   }
-
-  h += `<div class="fld">
-      <textarea id="in-ko" class="${listening?"listening":""}" aria-label="한국어 표현"
-        placeholder="${listening?"말씀하세요…":"예: 신발 신자, 밖에 나갈 거야"}">${esc(draftKo)}</textarea>
-    </div>
-    <button class="cta" id="btn-add">카드로 담기</button>
-  </div>`;
+  h += `<button class="cta" id="btn-add">카드로 담기</button>
+    </div>`;
+  if(micState === "none"){
+    h += `<p class="mic-hint">이 기기에서는 앱 안의 음성 인식이 안 돼요. 위 칸을 누르고 <b>키보드의 마이크 키</b>로 받아쓰기하면 똑같이 빠릅니다.</p>`;
+  }
+  h += `</div>`;
 
   h += promoCard();
 
@@ -561,6 +607,61 @@ function reviewView(){
   return h;
 }
 
+/* 검색 결과 줄만 만들어 냅니다. 입력할 때는 이 부분만 갈아 끼웁니다. */
+function filteredCards(){
+  const q = query.trim().toLowerCase();
+  const hit = c => !q || [c.ko, c.en, c.nuance, c.exEn, c.exKo, c.note, c.situation]
+    .some(v => v && String(v).toLowerCase().includes(q));
+  return byNewest().filter(c =>
+    (filter === "전체" ? true : filter === "영어 대기" ? c.status !== "done" : c.situation === filter) && hit(c));
+}
+
+function listRows(){
+  const q = query.trim().toLowerCase();
+  const rows = filteredCards();
+
+  if(!rows.length){
+    return `<div class="empty"><span class="ring">${svg(ICON.search)}</span><span class="big">No results</span>
+      <p>${q ? `"${esc(query)}" 와 맞는 카드가 없어요.` : "다른 상황을 골라 보세요."}</p></div>`;
+  }
+
+  return `<div class="list">` + rows.map(c => {
+    const open = c.id === openId;
+    let s2 = `<div class="item"><button class="hd" data-open="${esc(c.id)}">
+        <span class="lines">
+          <span class="en${c.status==="done"?"":" pending"}">${esc(c.status==="done" ? c.en : c.ko)}</span>
+          <span class="ko">${esc(c.status==="done" ? c.ko : (c.note || "영어를 기다리는 중"))}</span>
+        </span>
+        <span class="pill ${c.status==="done"?"done":"wait"}">${c.status==="done"?"준비됨":"대기"}</span>
+      </button>`;
+    s2 += `<div class="meta">${esc(c.situation||"기타")} · ${esc(c.by||"—")} · ${esc(c.at||"")}</div>`;
+    if(open){
+      s2 += `<div class="det">`;
+      if(c.status === "done"){
+        s2 += `<div><span class="lb">알아둘 점</span><p>${esc(c.nuance)}</p></div>
+              <div><span class="lb">${esc(CHILD)}에게 이렇게</span>
+                <p class="ex-en">${esc(c.exEn)}${sayBtn(c.id,"ex","예문 읽어 주기")}</p><p>${esc(c.exKo)}</p></div>`;
+      }else if(c.note){
+        s2 += `<div><span class="lb">상황 메모</span><p>${esc(c.note)}</p></div>`;
+      }
+      s2 += `<div><span class="lb">상황</span><div class="tags">`
+        + SITUATIONS.map(t => `<button class="tag" data-settag="${esc(c.id)}|${esc(t)}" aria-pressed="${c.situation===t}">${esc(t)}</button>`).join("")
+        + `</div></div>
+        <button class="del" data-del="${esc(c.id)}">이 카드 지우기</button></div>`;
+    }
+    return s2 + `</div>`;
+  }).join("") + `</div>`;
+}
+
+/* 검색창은 그대로 두고 결과만 바꿔 끼웁니다.
+   글자를 칠 때마다 화면 전체를 다시 그리면 한글 조합이 깨집니다. */
+function renderList(){
+  const box = document.getElementById("list-out");
+  if(box) box.innerHTML = listRows();
+  const cnt = document.getElementById("hit-count");
+  if(cnt) cnt.textContent = query.trim() ? filteredCards().length + "장" : "";
+}
+
 function listView(){
   const p = pendingCards();
   let h = "";
@@ -568,53 +669,23 @@ function listView(){
     h += `<div class="banner warn"><div><b>${p.length}장</b>이 영어를 기다리고 있어요.
       설정 탭의 <b>영어 채우기</b>에서 목록을 복사해 Claude에 붙여넣으면 채워집니다.</div></div>`;
   }
-  h += `<div class="search">${svg(ICON.search)}
-    <input type="text" id="in-search" value="${esc(query)}" placeholder="한국어·영어 아무거나 검색" autocomplete="off">
-    ${query ? `<button class="clear" id="btn-clearq" aria-label="검색어 지우기">${svg(ICON.close)}</button>` : ""}
+
+  h += `<div class="search${listening && listenMode === "search" ? " on" : ""}">
+    ${svg(ICON.search)}
+    <input type="text" id="in-search" value="${esc(query)}" placeholder="한국어·영어 아무거나 검색"
+      autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+    <span class="hits" id="hit-count">${query.trim() ? filteredCards().length + "장" : ""}</span>
+    <button class="clear" id="btn-clearq" aria-label="검색어 지우기"
+      style="${query ? "" : "display:none"}">${svg(ICON.close)}</button>
+    ${micState !== "none" ? `<button class="s-mic" id="btn-searchmic" aria-label="말로 검색">
+      ${listening && listenMode === "search" ? `<span class="dot"></span>` : svg(ICON.mic)}</button>` : ""}
   </div>`;
 
   const opts = ["전체","영어 대기"].concat(SITUATIONS);
   h += `<div class="chiprow">` + opts.map(o =>
     `<button class="tag" data-filter="${esc(o)}" aria-pressed="${filter===o}">${esc(o)}</button>`).join("") + `</div>`;
 
-  const q = query.trim().toLowerCase();
-  const hit = c => !q || [c.ko, c.en, c.nuance, c.exEn, c.exKo, c.note, c.situation]
-    .some(v => v && String(v).toLowerCase().includes(q));
-
-  const rows = byNewest().filter(c =>
-    (filter === "전체" ? true : filter === "영어 대기" ? c.status !== "done" : c.situation === filter) && hit(c));
-
-  if(!rows.length){
-    return h + `<div class="empty"><span class="ring">${svg(ICON.search)}</span><span class="big">No results</span>
-      <p>${query ? `"${esc(query)}" 와 맞는 카드가 없어요.` : "다른 상황을 골라 보세요."}</p></div>`;
-  }
-
-  h += `<div class="list">` + rows.map(c => {
-    const open = c.id === openId;
-    let s = `<div class="item"><button class="hd" data-open="${esc(c.id)}">
-        <span class="lines">
-          <span class="en${c.status==="done"?"":" pending"}">${esc(c.status==="done" ? c.en : c.ko)}</span>
-          <span class="ko">${esc(c.status==="done" ? c.ko : (c.note || "영어를 기다리는 중"))}</span>
-        </span>
-        <span class="pill ${c.status==="done"?"done":"wait"}">${c.status==="done"?"준비됨":"대기"}</span>
-      </button>`;
-    s += `<div class="meta">${esc(c.situation||"기타")} · ${esc(c.by||"—")} · ${esc(c.at||"")}</div>`;
-    if(open){
-      s += `<div class="det">`;
-      if(c.status === "done"){
-        s += `<div><span class="lb">알아둘 점</span><p>${esc(c.nuance)}</p></div>
-              <div><span class="lb">${esc(CHILD)}에게 이렇게</span>
-                <p class="ex-en">${esc(c.exEn)}${sayBtn(c.id,"ex","예문 읽어 주기")}</p><p>${esc(c.exKo)}</p></div>`;
-      }else if(c.note){
-        s += `<div><span class="lb">상황 메모</span><p>${esc(c.note)}</p></div>`;
-      }
-      s += `<div><span class="lb">상황</span><div class="tags">`
-        + SITUATIONS.map(t => `<button class="tag" data-settag="${esc(c.id)}|${esc(t)}" aria-pressed="${c.situation===t}">${esc(t)}</button>`).join("")
-        + `</div></div>
-        <button class="del" data-del="${esc(c.id)}">이 카드 지우기</button></div>`;
-    }
-    return s + `</div>`;
-  }).join("") + `</div>`;
+  h += `<div id="list-out">${listRows()}</div>`;
   return h;
 }
 
@@ -716,7 +787,7 @@ function settingsView(){
 function navView(){
   const d = dueCards().length, p = pendingCards().length;
   const items = [
-    {k:"add", n:"담기",    i:ICON.mic,   b: p ? p : 0, calm:false},
+    {k:"add", n:"홈",      i:ICON.home,  b: p ? p : 0, calm:false},
     {k:"rev", n:"복습",    i:ICON.cards, b: d ? d : 0, calm:true},
     {k:"all", n:"모아보기", i:ICON.list,  b: 0, calm:true},
     {k:"set", n:"설정",    i:ICON.gear,  b: syncMode === "pending" ? (outbox.length + tombs.length) : 0, calm:false}
@@ -844,7 +915,12 @@ document.addEventListener("click", e => {
     tab = t.dataset.tab; SS.set("ycard.tab", tab);
     flipped = false; reviewIdx = 0;
     if(tab === "rev") buildReviewQueue();   // 들어올 때마다 순서를 새로 섞습니다
-    render(); return;
+    render();
+    if(tab === "all" && t.classList.contains("vf-go")){
+      const el = document.getElementById("in-search");
+      if(el) el.focus();
+    }
+    return;
   }
   if(t.dataset.who){
     who = t.dataset.who; LS.set("ycard.who", who);
@@ -861,9 +937,15 @@ document.addEventListener("click", e => {
   }
   if(t.id === "btn-clearq"){
     query = ""; SS.set("ycard.q", "");
-    render();
     const el = document.getElementById("in-search");
-    if(el) el.focus();
+    if(el){ el.value = ""; el.focus(); }
+    renderList();
+    t.style.display = "none";
+    return;
+  }
+  if(t.id === "btn-findmic" || t.id === "btn-searchmic"){
+    if(listening && listenMode === "search"){ stopListening(); }
+    else{ query = ""; startListening("search"); }
     return;
   }
   if(t.dataset.settag){
@@ -891,7 +973,7 @@ document.addEventListener("click", e => {
   }
 
   switch(t.id){
-    case "btn-mic":   listening ? stopListening() : startListening(); return;
+    case "btn-mic":   listening ? stopListening() : startListening("capture"); return;
     case "btn-flip":  flipped = true; render(); return;
     case "btn-add":   addCard(); return;
     case "btn-apply": applyJson(); return;
@@ -922,11 +1004,20 @@ document.addEventListener("input", e => {
   if(e.target.id === "in-ko"){ draftKo = e.target.value; SS.set("ycard.draftKo", draftKo); }
   if(e.target.id === "in-search"){
     query = e.target.value; SS.set("ycard.q", query);
-    render();
-    // 다시 그리면 포커스가 날아가므로 커서를 끝에 붙여 되돌려 놓습니다
-    const el = document.getElementById("in-search");
-    if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(_){} }
+    if(composing) return;          // 한글을 조합하는 중에는 건드리지 않습니다
+    renderList();                  // 검색창은 그대로, 결과만 교체
+    const clr = document.getElementById("btn-clearq");
+    if(clr) clr.style.display = query ? "" : "none";
   }
+});
+
+/* 한글 IME 조합 처리 — 조합이 끝난 뒤에 한 번만 걸러 냅니다 */
+document.addEventListener("compositionstart", e => { if(e.target.id === "in-search") composing = true; });
+document.addEventListener("compositionend", e => {
+  if(e.target.id !== "in-search") return;
+  composing = false;
+  query = e.target.value; SS.set("ycard.q", query);
+  renderList();
 });
 
 document.addEventListener("keydown", e => {

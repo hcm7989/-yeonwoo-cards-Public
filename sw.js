@@ -8,7 +8,7 @@
 
    앱을 고친 뒤에는 아래 CACHE 뒤의 숫자를 하나 올리세요. */
 
-const CACHE = "ellie-english-v4";
+const CACHE = "ellie-english-v5";
 
 const SHELL = [
   "./",
