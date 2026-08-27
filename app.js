@@ -100,6 +100,11 @@ let tab        = SS.get("ycard.tab", "add");
 let filter     = SS.get("ycard.filter", "전체");
 let draftKo    = SS.get("ycard.draftKo", "");
 let openId     = null;
+/* 카드 수정 — 입력값은 editDraft 에만 담습니다.
+   글자를 칠 때마다 화면을 다시 그리면 한글 조합이 깨지므로,
+   입력 중에는 아무것도 다시 그리지 않고 저장할 때 한 번에 반영합니다. */
+let editId     = null;
+let editDraft  = null;
 let flipped    = false;
 let reviewIdx  = 0;
 let reviewQueue = [];          // 이번 복습 세션의 카드 순서
@@ -635,7 +640,9 @@ function listRows(){
         <span class="pill ${c.status==="done"?"done":"wait"}">${c.status==="done"?"준비됨":"대기"}</span>
       </button>`;
     s2 += `<div class="meta">${esc(c.situation||"기타")} · ${esc(c.by||"—")} · ${esc(c.at||"")}</div>`;
-    if(open){
+    if(open && c.id === editId){
+      s2 += editForm(c);
+    }else if(open){
       s2 += `<div class="det">`;
       if(c.status === "done"){
         s2 += `<div><span class="lb">알아둘 점</span><p>${esc(c.nuance)}</p></div>
@@ -647,10 +654,67 @@ function listRows(){
       s2 += `<div><span class="lb">상황</span><div class="tags">`
         + SITUATIONS.map(t => `<button class="tag" data-settag="${esc(c.id)}|${esc(t)}" aria-pressed="${c.situation===t}">${esc(t)}</button>`).join("")
         + `</div></div>
-        <button class="del" data-del="${esc(c.id)}">이 카드 지우기</button></div>`;
+        <div class="detbtns">
+          <button class="editbtn" data-edit="${esc(c.id)}">고치기</button>
+          <button class="del" data-del="${esc(c.id)}">지우기</button>
+        </div></div>`;
     }
     return s2 + `</div>`;
   }).join("") + `</div>`;
+}
+
+
+/* 카드 고치기 — 값은 editDraft 에서만 읽고 씁니다. */
+function editForm(c){
+  const d = editDraft || {};
+  const f = (name, label, ph, big) =>
+    `<label class="fld"><span class="lb">${label}</span>
+      <textarea class="edit-f${big ? " big" : ""}" data-f="${name}" placeholder="${ph}">${esc(d[name] || "")}</textarea></label>`;
+  return `<div class="det edit">
+    ${f("ko",     "한국어 표현",            "예: 신발 신자, 밖에 나갈 거야")}
+    ${f("en",     "영어 표현",              "비워 두면 '영어 대기' 로 돌아갑니다")}
+    ${f("nuance", "알아둘 점",              "왜 그대로는 안 옮겨지는지", true)}
+    ${f("exEn",   CHILD + "에게 쓰는 예문 (영어)", "Shoes on — we're going outside!")}
+    ${f("exKo",   "그 예문의 한국어",        "신발 신자, 밖에 나갈 거야!")}
+    <div><span class="lb">상황</span><div class="tags">`
+      + SITUATIONS.map(t => `<button class="tag" data-edittag="${esc(t)}" aria-pressed="${d.situation === t}">${esc(t)}</button>`).join("")
+      + `</div></div>
+    <div class="rowbtns">
+      <button class="ghost" id="btn-editcancel">취소</button>
+      <button class="cta small" id="btn-editsave">저장</button>
+    </div>
+  </div>`;
+}
+
+function startEdit(id){
+  const c = cards.find(x => x.id === id);
+  if(!c) return;
+  editId = id;
+  editDraft = {
+    ko: c.ko || "", en: c.en || "", nuance: c.nuance || "",
+    exEn: c.exEn || "", exKo: c.exKo || "", situation: c.situation || "기타"
+  };
+  renderList();
+}
+
+function saveEdit(){
+  const c = cards.find(x => x.id === editId);
+  if(!c || !editDraft){ editId = null; editDraft = null; renderList(); return; }
+  const ko = (editDraft.ko || "").trim();
+  if(!ko){ toast("한국어 표현은 비울 수 없어요"); return; }
+
+  c.ko        = ko;
+  c.en        = (editDraft.en || "").trim();
+  c.nuance    = (editDraft.nuance || "").trim();
+  c.exEn      = (editDraft.exEn || "").trim();
+  c.exKo      = (editDraft.exKo || "").trim();
+  c.situation = editDraft.situation || "기타";
+  c.status    = c.en ? "done" : "pending";
+
+  editId = null; editDraft = null;
+  render();                 // 위쪽 숫자와 탭 배지까지 다시 셉니다
+  toast("고쳤어요");
+  pushCard(c);
 }
 
 /* 검색창은 그대로 두고 결과만 바꿔 끼웁니다.
@@ -948,14 +1012,33 @@ document.addEventListener("click", e => {
     else{ query = ""; startListening("search"); }
     return;
   }
+  if(t.dataset.edit){ startEdit(t.dataset.edit); return; }
+  if(t.dataset.edittag){
+    if(editDraft){
+      editDraft.situation = t.dataset.edittag;
+      // 태그만 바꾸는 것은 조합 중인 글자가 없으므로 다시 그려도 안전합니다
+      renderList();
+    }
+    return;
+  }
+  if(t.id === "btn-editsave"){ saveEdit(); return; }
+  if(t.id === "btn-editcancel"){ editId = null; editDraft = null; renderList(); return; }
   if(t.dataset.settag){
     const [id, tag] = t.dataset.settag.split("|");
     const c = cards.find(x => x.id === id);
     if(c && c.situation !== tag){ c.situation = tag; render(); pushCard(c); }
     return;
   }
-  if(t.dataset.filter){ filter = t.dataset.filter; SS.set("ycard.filter", filter); openId = null; render(); return; }
-  if(t.dataset.open){ openId = openId === t.dataset.open ? null : t.dataset.open; render(); return; }
+  if(t.dataset.filter){
+    filter = t.dataset.filter; SS.set("ycard.filter", filter);
+    openId = null; editId = null; editDraft = null;
+    render(); return;
+  }
+  if(t.dataset.open){
+    openId = openId === t.dataset.open ? null : t.dataset.open;
+    if(editId && editId !== openId){ editId = null; editDraft = null; }
+    render(); return;
+  }
   if(t.dataset.del){
     const id = t.dataset.del;
     cards = cards.filter(c => c.id !== id);
@@ -1002,6 +1085,10 @@ document.addEventListener("click", e => {
 
 document.addEventListener("input", e => {
   if(e.target.id === "in-ko"){ draftKo = e.target.value; SS.set("ycard.draftKo", draftKo); }
+  if(e.target.classList && e.target.classList.contains("edit-f")){
+    if(editDraft) editDraft[e.target.dataset.f] = e.target.value;
+    return;                       // 다시 그리지 않습니다 — 한글 조합이 깨지지 않게
+  }
   if(e.target.id === "in-search"){
     query = e.target.value; SS.set("ycard.q", query);
     if(composing) return;          // 한글을 조합하는 중에는 건드리지 않습니다
@@ -1030,15 +1117,57 @@ window.addEventListener("beforeinstallprompt", e => {
 });
 
 /* ───────────────── boot ───────────────── */
-// 홈 화면 아이콘 길게 눌러 쓰는 바로가기 (#add / #rev)
-const short = location.hash.replace("#","");
-if(short === "add" || short === "rev" || short === "all" || short === "set"){
-  tab = short; SS.set("ycard.tab", tab);
-  history.replaceState(null, "", location.pathname);
+/* ── 주소 뒤에 붙어 오는 지시 ──────────────────────────────
+   iOS 단축어(위젯)에서 받아쓴 말을 이 형태로 넘겨줍니다.
+     #q=문장     → 모아보기에서 그 말로 찾기
+     #add=문장   → 홈에 미리 채워 두기 (누르면 담김)
+     #save=문장  → 확인 없이 바로 담기
+   그냥 #add / #rev / #all / #set 은 탭 바로가기입니다. */
+const rawHash = location.hash.slice(1);
+const decode = t => { try{ return decodeURIComponent(t.replace(/\+/g, " ")); }catch(e){ return t; } };
+const clearHash = () => history.replaceState(null, "", location.pathname);
+
+let pendingSave = "";
+const mQ    = rawHash.match(/^q=([\s\S]*)$/i);
+const mAdd  = rawHash.match(/^add=([\s\S]+)$/i);
+const mSave = rawHash.match(/^save=([\s\S]+)$/i);
+
+if(mQ){
+  query = decode(mQ[1]).trim(); SS.set("ycard.q", query);
+  tab = "all"; SS.set("ycard.tab", tab);
+  clearHash();
+}else if(mAdd){
+  draftKo = decode(mAdd[1]).trim(); SS.set("ycard.draftKo", draftKo);
+  tab = "add"; SS.set("ycard.tab", tab);
+  clearHash();
+}else if(mSave){
+  pendingSave = decode(mSave[1]).trim();
+  tab = "add"; SS.set("ycard.tab", tab);
+  clearHash();
+}else{
+  const short = rawHash;
+  if(short === "add" || short === "rev" || short === "all" || short === "set"){
+    tab = short; SS.set("ycard.tab", tab);
+    clearHash();
+  }
 }
 
 if(tab === "rev") buildReviewQueue();
 render();
+
+if(pendingSave){                    // #save= 로 들어온 말은 확인 없이 담습니다
+  draftKo = pendingSave; pendingSave = "";
+  SS.set("ycard.draftKo", draftKo);
+  render();                         // 입력칸에 값을 실제로 올린 뒤에
+  addCard();                        // 담습니다
+}else if(mQ){
+  const n = filteredCards().length;
+  toast(query ? (n ? `"${query}" · ${n}장 찾았어요` : `"${query}" 와 맞는 카드가 없어요`) : "찾을 말이 없어요");
+}else if(mAdd){
+  const el = document.getElementById("in-ko");
+  if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(e){} }
+  toast("받아쓴 말을 넣어 뒀어요");
+}
 
 // 참여 링크(#f=코드)로 열렸을 때
 const m = location.hash.match(/f=([a-z0-9]+)/i);
@@ -1052,8 +1181,6 @@ if(m && m[1] && m[1] !== family){
 }else if(family){
   connect();
 }
-
-if(firstRun){ tab = "add"; SS.set("ycard.tab", "add"); }
 
 /* 서비스 워커 등록. window.load 를 기다리지 않습니다 —
    구글 폰트 같은 외부 자원이 느리면 load 가 늦게 떠서 등록도 같이 밀립니다. */

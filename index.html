@@ -295,6 +295,24 @@ textarea.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size
 @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .tile .ic{background:rgba(255,255,255,.62)}}
 
 
+
+/* ── 카드 고치기 ──────────────────────────────────────── */
+.detbtns{display:flex; gap:8px}
+.editbtn{
+  border:0; background:var(--violet-soft); color:var(--violet);
+  border-radius:12px; padding:9px 16px; font-size:12.5px; font-weight:700;
+}
+.item .det.edit{gap:12px}
+.det.edit textarea.edit-f{
+  min-height:46px; font-size:15.5px; padding:11px 13px; border-radius:13px;
+  background:var(--bg); border:1.5px solid transparent;
+}
+.det.edit textarea.edit-f:focus{border-color:var(--violet); background:var(--surface)}
+.det.edit textarea.edit-f.big{min-height:132px}
+.det.edit .rowbtns{margin-top:2px}
+.det.edit .cta.small{padding:13px; font-size:15px; border-radius:14px}
+.det.edit .ghost{border-radius:14px}
+
 /* ── 검색 · 읽어 주기 ─────────────────────────────────── */
 .search{
   display:flex; align-items:center; gap:8px; background:var(--surface);
@@ -456,10 +474,29 @@ nav .badge.calm{background:var(--violet); color:var(--on-violet)}
             <b>const firebaseConfig =</b> 나 맨 끝의 <b>;</b> 까지 같이 붙여넣으면 앱이 안 뜹니다.</li>
         <li>저장소 <b>맨 위</b>에 index.html · app.js · seed.js · firebase-config.js · sw.js 가
             나란히 있는지 보세요. 폴더 안에 들어가 있으면 안 됩니다.</li>
-        <li>고친 뒤에도 그대로면 <b>sw.js</b> 의 ellie-english-v5 숫자를 하나 올리고 다시 Commit 하세요.</li>
+        <li>고친 뒤에도 그대로면 <b>sw.js</b> 의 ellie-english-v8 숫자를 하나 올리고 다시 Commit 하세요.</li>
       </ol>
     </div>
   </div>
+  <script>
+  /* 파일을 더블클릭해서 열면 브라우저가 file:// 로 엽니다.
+     그 경우 보안상 자바스크립트 모듈이 차단되어 앱이 뜨지 않습니다.
+     모듈이 아닌 이 스크립트는 그때도 실행되므로, 안내를 바꿔 줍니다. */
+  if(location.protocol === "file:"){
+    var boot = document.querySelector(".boot");
+    if(boot){
+      boot.innerHTML =
+        '<h2>주소로 열어 주세요</h2>' +
+        '<p>파일을 더블클릭해서 여시면 브라우저가 보안상 앱의 자바스크립트를 막습니다. ' +
+        '앱 잘못이 아니라 모든 웹앱이 똑같습니다.</p>' +
+        '<ol><li>아래 주소를 브라우저 주소창에 넣어 여세요. 폰과 같은 주소이고, ' +
+        '가족 코드로 카드도 그대로 이어집니다.<br>' +
+        '<b style="word-break:break-all">https://hcm7989.github.io/-yeonwoo-cards-Public/</b></li>' +
+        '<li>크롬 주소창 오른쪽의 <b>설치</b> 아이콘을 누르면 컴퓨터에도 앱처럼 깔려 ' +
+        '별도 창으로 열립니다.</li></ol>';
+    }
+  }
+  </script>
   <nav><div class="nav-in" id="nav" role="tablist"></div></nav>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script type="module" src="app.js"></script>
