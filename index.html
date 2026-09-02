@@ -250,6 +250,25 @@ textarea.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size
 .judge button{border-radius:18px; padding:17px 10px; font-size:15px; font-weight:700; border:0; background:var(--surface); color:var(--ink-2); box-shadow:var(--shadow)}
 .judge button.yes{background:var(--cta); color:var(--on-cta)}
 
+/* 복습 제외 줄 — 판정 버튼 아래, 눈에 덜 띄는 자리 */
+.judge-sub{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:2px 4px}
+.linkbtn{
+  border:0; background:none; color:var(--muted); padding:6px 2px;
+  font-size:12.5px; font-weight:700; text-decoration:underline; text-underline-offset:3px;
+}
+.ok-dots{display:inline-flex; gap:5px; align-items:center}
+.ok-dots i{width:6px; height:6px; border-radius:50%; background:var(--line-soft); display:block}
+.ok-dots i.on{background:var(--violet)}
+.pill.grad{display:inline-flex; align-items:center; gap:4px; background:var(--violet); color:var(--on-violet)}
+.pill.grad svg{width:11px; height:11px}
+.promo-x{
+  position:relative; align-self:flex-start; border:0; border-radius:999px;
+  background:rgba(255,255,255,.22); color:#fff; padding:7px 13px; font-size:11.5px; font-weight:700;
+}
+.grad-tag{color:var(--violet)}
+.editbtn.on{background:var(--violet); color:var(--on-violet)}
+.empty .ghost{margin-top:6px}
+
 .empty{
   background:var(--surface); border-radius:26px; padding:46px 24px;
   text-align:center; display:flex; flex-direction:column; gap:11px; align-items:center; box-shadow:var(--shadow);
@@ -297,7 +316,7 @@ textarea.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size
 
 
 /* ── 카드 고치기 ──────────────────────────────────────── */
-.detbtns{display:flex; gap:8px}
+.detbtns{display:flex; gap:8px; flex-wrap:wrap}
 .editbtn{
   border:0; background:var(--violet-soft); color:var(--violet);
   border-radius:12px; padding:9px 16px; font-size:12.5px; font-weight:700;
@@ -474,7 +493,7 @@ nav .badge.calm{background:var(--violet); color:var(--on-violet)}
             <b>const firebaseConfig =</b> 나 맨 끝의 <b>;</b> 까지 같이 붙여넣으면 앱이 안 뜹니다.</li>
         <li>저장소 <b>맨 위</b>에 index.html · app.js · seed.js · firebase-config.js · sw.js 가
             나란히 있는지 보세요. 폴더 안에 들어가 있으면 안 됩니다.</li>
-        <li>고친 뒤에도 그대로면 <b>sw.js</b> 의 ellie-english-v8 숫자를 하나 올리고 다시 Commit 하세요.</li>
+        <li>고친 뒤에도 그대로면 <b>sw.js</b> 의 ellie-english-v9 숫자를 하나 올리고 다시 Commit 하세요.</li>
       </ol>
     </div>
   </div>

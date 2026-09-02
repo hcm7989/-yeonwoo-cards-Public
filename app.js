@@ -29,6 +29,7 @@ try{
 
 const CHILD = "연우";
 const STEPS = [1,3,7,16,35,90];
+const MASTER_AT = 5;          // "알겠어요" 를 이만큼 누르면 그 카드는 졸업합니다
 const ICON = {
   mic:   '<rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5 10.5v1a7 7 0 0 0 14 0v-1"/><path d="M12 18.5V22"/>',
   cards: '<rect x="7" y="3" width="13" height="15" rx="3.2"/><path d="M4 6.6v10.9A3.5 3.5 0 0 0 7.5 21H15"/>',
@@ -109,6 +110,7 @@ let flipped    = false;
 let reviewIdx  = 0;
 let reviewQueue = [];          // 이번 복습 세션의 카드 순서
 let reviewTotal = 0;           // 세션 시작 때의 장수 (진도 표시용)
+let reviewAll  = false;        // 졸업한 카드까지 한 바퀴 도는 전체 복습 모드
 let query      = SS.get("ycard.q", "");   // 모아보기 검색어
 let syncMode   = "local";      // local | connecting | cloud | pending | error
 let syncNote   = "";
@@ -128,20 +130,44 @@ function persistLocal(){ LS.set("ycard.cards", cards); }
    같은 카드라도 아빠 폰과 엄마 폰에서 나오는 순서가 다릅니다. */
 const srsKey = () => "ycard.srs." + (who || "나");
 const srs    = () => LS.get(srsKey(), {});
+const srsOf         = id => srs()[id] || {};
+const isMastered    = id => !!srsOf(id).mastered;
+const masteredCards = () => readyCards().filter(c => isMastered(c.id));
+
+/* 오늘 볼 카드 — 졸업한 카드는 빠집니다. */
 function dueCards(){
   const s = srs(), t = today();
-  return readyCards().filter(c => { const r = s[c.id]; return !r || !r.due || r.due <= t; });
+  return readyCards().filter(c => {
+    const r = s[c.id];
+    if(r && r.mastered) return false;
+    return !r || !r.due || r.due <= t;
+  });
+}
+
+/* 전체 복습일 때는 졸업한 카드까지 전부 돌립니다. */
+const reviewPool = () => reviewAll ? readyCards() : dueCards();
+
+/* 손으로 빼거나 다시 넣기 */
+function setMastered(id, on){
+  const s = srs();
+  const r = s[id] || { step: -1 };
+  r.mastered = !!on;
+  if(!on){ r.due = today(); r.ok = 0; r.step = -1; }   // 다시 넣으면 오늘부터 처음처럼
+  s[id] = r; LS.set(srsKey(), s);
 }
 function grade(id, ok){
   const s = srs();
   const r = s[id] || { step: -1 };
   if(ok){
+    r.ok = (r.ok || 0) + 1;
     r.step = Math.min(r.step + 1, STEPS.length - 1);
     const d = new Date(); d.setDate(d.getDate() + STEPS[r.step]);
     r.due = d.toISOString().slice(0,10);
+    if(r.ok >= MASTER_AT) r.mastered = true;   // 다섯 번 맞히면 졸업
   }else{
     r.step = -1; r.due = today();
     r.again = (r.again || 0) + 1;   // 몇 번이나 미뤘는지 — 다음 복습 순서에 씁니다
+    r.mastered = false;             // 미룬 카드는 졸업이 취소됩니다
   }
   s[id] = r; LS.set(srsKey(), s);
 }
@@ -157,10 +183,10 @@ function shuffle(arr){
   return a;
 }
 function buildReviewQueue(){
-  const rec = srs();
+  const all = srs();
   const tiers = new Map();               // 미룬 횟수 → 카드 id 묶음
-  dueCards().forEach(c => {
-    const n = (rec[c.id] && rec[c.id].again) || 0;
+  reviewPool().forEach(c => {
+    const n = (all[c.id] && all[c.id].again) || 0;
     if(!tiers.has(n)) tiers.set(n, []);
     tiers.get(n).push(c.id);
   });
@@ -171,7 +197,7 @@ function buildReviewQueue(){
   reviewIdx = 0; flipped = false;
 }
 function currentQueue(){
-  const due = new Set(dueCards().map(c => c.id));
+  const due = new Set(reviewPool().map(c => c.id));
   let q = reviewQueue.filter(id => due.has(id));
   if(q.length !== due.size){                 // 그 사이 새로 준비된 카드가 있으면 뒤에 붙입니다
     due.forEach(id => { if(!q.includes(id)) q.push(id); });
@@ -567,29 +593,46 @@ function reviewView(){
       <p>표현을 담고 영어가 채워지면 여기로 올라옵니다.</p></div>`;
   }
   const q = currentQueue();
+  const done = masteredCards().length;
   if(!q.length){
-    return `<div class="empty"><span class="ring">${svg(ICON.check)}</span><span class="big">All done for today</span>
-      <p>${readyCards().length}장 중 오늘 몫을 다 봤어요. 내일 열면 잊어버릴 때가 된 카드만 골라서 보여드릴게요.</p></div>`;
+    /* 오늘 몫이 끝났습니다. 졸업한 카드가 있으면 여기서 전체 복습으로 넘어갈 수 있습니다. */
+    let e = `<div class="empty"><span class="ring">${svg(ICON.check)}</span>
+      <span class="big">${reviewAll ? "Full round finished" : "All done for today"}</span>
+      <p>${reviewAll
+          ? `전체 복습을 한 바퀴 다 돌았어요. 졸업 표시는 그대로 있으니 안심하세요.`
+          : done === readyCards().length
+            ? `${done}장이 모두 복습에서 빠져 있어요. 아래에서 한 바퀴 다시 돌아볼 수 있습니다.`
+            : `${readyCards().length}장 중 오늘 몫을 다 봤어요. 내일 열면 잊어버릴 때가 된 카드만 골라서 보여드릴게요.`}</p>`;
+    if(reviewAll){
+      e += `<button class="ghost" id="btn-reviewtoday">오늘 몫만 보기로 돌아가기</button>`;
+    }else if(readyCards().length){
+      e += `<button class="ghost accent" id="btn-reviewall">졸업한 카드까지 전체 복습 (${readyCards().length}장)</button>`;
+      if(done) e += `<p class="hint">지금 <b>${done}장</b>이 복습에서 빠져 있어요.</p>`;
+    }
+    return e + `</div>`;
   }
   if(reviewIdx >= q.length) reviewIdx = 0;
   const c = cards.find(x => x.id === q[reviewIdx]);
   if(!c){ reviewIdx = 0; return reviewView(); }
-  const pct = Math.round(((reviewIdx + 1) / q.length) * 100);
+  const mastered = isMastered(c.id);
 
   const total = Math.max(reviewTotal, q.length);
   const nth   = Math.min(total - q.length + 1, total);
   const bar   = Math.round((nth / total) * 100);
-  let h = `<div class="promo">
-    <span class="cap">${svg(ICON.play)}${esc(who || "나")} 복습 중</span>
-    <span class="big">오늘 <em>${nth}</em> / <em>${total}</em></span>
+  let h = `<div class="promo${reviewAll ? " wide" : ""}">
+    <span class="cap">${svg(ICON.play)}${esc(who || "나")} ${reviewAll ? "전체 복습 중" : "복습 중"}</span>
+    <span class="big">${reviewAll ? "전체" : "오늘"} <em>${nth}</em> / <em>${total}</em></span>
     <span class="track"><i style="width:${Math.max(bar,3)}%"></i></span>
+    ${reviewAll ? `<button class="promo-x" id="btn-reviewtoday">오늘 몫만 보기</button>` : ""}
   </div>`;
 
   if(!flipped){
-    const mine = (srs()[c.id] || {}).again || 0;
+    const r = srsOf(c.id);
+    const mine = r.again || 0;
     h += `<div class="card"><button class="face" id="btn-flip">
       <span class="chips">
         <span class="pill sit">${esc(c.situation||"기타")}</span>
+        ${mastered ? `<span class="pill grad">${svg(ICON.check)}졸업</span>` : ""}
         ${mine ? `<span class="pill wait">${who || "나"}가 ${mine}번 미룸</span>` : ""}
       </span>
       <span class="ko">${esc(c.ko)}</span>
@@ -597,6 +640,7 @@ function reviewView(){
       <span class="turn">${svg(ICON.arrow)}탭하면 영어가 나와요</span>
     </button></div>`;
   }else{
+    const ok = srsOf(c.id).ok || 0;
     h += `<div class="card reveal"><div class="answer">
         <div class="prompt">${esc(c.ko)}</div>
         <div class="en-row"><span class="en">${esc(c.en)}</span>${sayBtn(c.id,"en","영어 문장 읽어 주기")}</div>
@@ -607,6 +651,14 @@ function reviewView(){
       <div class="judge">
         <button data-grade="0">다음에 다시 볼래요</button>
         <button class="yes" data-grade="1">알겠어요</button>
+      </div>
+      <div class="judge-sub">
+        <button class="linkbtn" data-master="${esc(c.id)}|${mastered ? 0 : 1}">
+          ${mastered ? "복습에 다시 넣기" : "이 표현은 복습 제외"}
+        </button>
+        ${mastered ? "" : `<span class="ok-dots" aria-label="알겠어요 ${ok} / ${MASTER_AT}">${
+          Array.from({length: MASTER_AT}, (_, i) => `<i class="${i < ok ? "on" : ""}"></i>`).join("")
+        }</span>`}
       </div>`;
   }
   return h;
@@ -618,7 +670,10 @@ function filteredCards(){
   const hit = c => !q || [c.ko, c.en, c.nuance, c.exEn, c.exKo, c.note, c.situation]
     .some(v => v && String(v).toLowerCase().includes(q));
   return byNewest().filter(c =>
-    (filter === "전체" ? true : filter === "영어 대기" ? c.status !== "done" : c.situation === filter) && hit(c));
+    (filter === "전체"     ? true
+     : filter === "영어 대기" ? c.status !== "done"
+     : filter === "복습 제외" ? isMastered(c.id)
+     : c.situation === filter) && hit(c));
 }
 
 function listRows(){
@@ -639,7 +694,8 @@ function listRows(){
         </span>
         <span class="pill ${c.status==="done"?"done":"wait"}">${c.status==="done"?"준비됨":"대기"}</span>
       </button>`;
-    s2 += `<div class="meta">${esc(c.situation||"기타")} · ${esc(c.by||"—")} · ${esc(c.at||"")}</div>`;
+    s2 += `<div class="meta">${esc(c.situation||"기타")} · ${esc(c.by||"—")} · ${esc(c.at||"")}${
+      isMastered(c.id) ? ` · <b class="grad-tag">복습 제외</b>` : ""}</div>`;
     if(open && c.id === editId){
       s2 += editForm(c);
     }else if(open){
@@ -656,6 +712,9 @@ function listRows(){
         + `</div></div>
         <div class="detbtns">
           <button class="editbtn" data-edit="${esc(c.id)}">고치기</button>
+          ${c.status === "done"
+            ? `<button class="editbtn${isMastered(c.id) ? " on" : ""}" data-master="${esc(c.id)}|${isMastered(c.id) ? 0 : 1}">${isMastered(c.id) ? "복습에 다시" : "복습 제외"}</button>`
+            : ""}
           <button class="del" data-del="${esc(c.id)}">지우기</button>
         </div></div>`;
     }
@@ -727,6 +786,8 @@ function renderList(){
 }
 
 function listView(){
+  // 제외한 카드를 다 되돌리면 그 칸도 사라지므로 필터를 전체로 되돌립니다
+  if(filter === "복습 제외" && !masteredCards().length){ filter = "전체"; SS.set("ycard.filter", filter); }
   const p = pendingCards();
   let h = "";
   if(p.length){
@@ -745,7 +806,7 @@ function listView(){
       ${listening && listenMode === "search" ? `<span class="dot"></span>` : svg(ICON.mic)}</button>` : ""}
   </div>`;
 
-  const opts = ["전체","영어 대기"].concat(SITUATIONS);
+  const opts = ["전체","영어 대기"].concat(masteredCards().length ? ["복습 제외"] : []).concat(SITUATIONS);
   h += `<div class="chiprow">` + opts.map(o =>
     `<button class="tag" data-filter="${esc(o)}" aria-pressed="${filter===o}">${esc(o)}</button>`).join("") + `</div>`;
 
@@ -777,9 +838,11 @@ function settingsView(){
     return {
       p,
       seen: vals.length,
-      again: vals.reduce((n, r) => n + (r.again || 0), 0)
+      again: vals.reduce((n, r) => n + (r.again || 0), 0),
+      grad: vals.filter(r => r.mastered).length
     };
   });
+  const mine = masteredCards().length;
   h += `<div class="sheet">
     <h2>복습 진도</h2>
     <p class="hint">복습 순서와 <b>"다음에 다시 볼래요"</b> 횟수는 <b>사람마다 따로</b> 쌓입니다.
@@ -788,9 +851,19 @@ function settingsView(){
     <div class="who-stat">
       ${per.map(x => `<div class="${x.p === who ? "me" : ""}">
         <span class="n">${esc(x.p)}${x.p === who ? " · 나" : ""}</span>
-        <span class="d"><b>${x.seen}</b>장 봄 · <b>${x.again}</b>번 미룸</span>
+        <span class="d"><b>${x.seen}</b>장 봄 · <b>${x.again}</b>번 미룸 · <b>${x.grad}</b>장 졸업</span>
       </div>`).join("")}
     </div>
+  </div>`;
+
+  h += `<div class="sheet">
+    <h2>복습 제외 카드</h2>
+    <p class="hint"><b>알겠어요</b>를 ${MASTER_AT}번 누르면 그 카드는 저절로 졸업해서 매일 복습에 나오지 않습니다.
+      너무 잘 아는 표현은 카드에서 <b>복습 제외</b>를 눌러 바로 빼 둘 수도 있어요. 지운 게 아니라 모아보기에는 그대로 있습니다.</p>
+    <div class="status"><span class="led ${mine ? "on" : ""}"></span>
+      <span>${esc(who || "나")} 기준 <b>${mine}장</b>이 복습에서 빠져 있어요</span></div>
+    <button class="ghost full ${mine ? "accent" : ""}" id="btn-reviewall">졸업한 카드까지 전체 복습 한 바퀴</button>
+    ${mine ? `<button class="ghost full" id="btn-unmasterall">제외한 ${mine}장 모두 복습에 되돌리기</button>` : ""}
   </div>`;
 
   h += `<div class="sheet">
@@ -978,7 +1051,8 @@ document.addEventListener("click", e => {
   if(t.dataset.tab){
     tab = t.dataset.tab; SS.set("ycard.tab", tab);
     flipped = false; reviewIdx = 0;
-    if(tab === "rev") buildReviewQueue();   // 들어올 때마다 순서를 새로 섞습니다
+    // 탭으로 들어오면 언제나 "오늘 몫"부터. 전체 복습은 버튼으로만 켭니다.
+    if(tab === "rev"){ reviewAll = false; buildReviewQueue(); }   // 들어올 때마다 순서를 새로 섞습니다
     render();
     if(tab === "all" && t.classList.contains("vf-go")){
       const el = document.getElementById("in-search");
@@ -1049,10 +1123,43 @@ document.addEventListener("click", e => {
        섞인 순서(currentQueue)가 아니라 dueCards() 순서를 쓰면
        엉뚱한 카드가 채점돼서 화면이 그대로 멈춥니다. */
     const id = currentQueue()[reviewIdx];
+    const before = id ? isMastered(id) : false;
     if(id) grade(id, t.dataset.grade === "1");
     flipped = false;
     if(t.dataset.grade === "0") reviewIdx += 1;   // 미룬 카드는 뒤로 돌려보냅니다
+    render();
+    if(id && !before && isMastered(id)) toast(`알겠어요 ${MASTER_AT}번 — 이 카드는 졸업했어요`);
+    return;
+  }
+  if(t.dataset.master){
+    const [id, on] = t.dataset.master.split("|");
+    setMastered(id, on === "1");
+    /* 전체 복습 중이 아니면 제외한 카드는 지금 줄에서 바로 빠집니다.
+       뒤 카드가 앞으로 당겨지므로 번호는 그대로 두어야 합니다. */
+    if(tab === "rev"){ flipped = false; }
+    render();
+    toast(on === "1" ? "복습에서 빼 두었어요" : "복습에 다시 넣었어요");
+    return;
+  }
+  if(t.id === "btn-reviewall"){
+    reviewAll = true;
+    tab = "rev"; SS.set("ycard.tab", tab);
+    flipped = false; buildReviewQueue();
+    render();
+    toast(`전체 복습 ${reviewTotal}장을 한 바퀴 돌아요`);
+    return;
+  }
+  if(t.id === "btn-reviewtoday"){
+    reviewAll = false;
+    flipped = false; buildReviewQueue();
     render(); return;
+  }
+  if(t.id === "btn-unmasterall"){
+    const ids = masteredCards().map(c => c.id);
+    ids.forEach(id => setMastered(id, false));
+    buildReviewQueue(); render();
+    toast(`${ids.length}장을 복습에 되돌렸어요`);
+    return;
   }
 
   switch(t.id){
